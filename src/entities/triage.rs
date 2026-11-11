@@ -1,5 +1,5 @@
 //! The heart of the product: given a snapshot of an item and the user's
-//! rules, whose turn is it, and why?
+//! rules, whose turn is it, why, and since when?
 
 use super::change_request::{ChangeRequest, Checks, ReviewState, Thread};
 use super::item::WorkItem;
@@ -30,7 +30,7 @@ impl<'a> Reasons<'a> {
         }
     }
 
-    fn add(&mut self, kind: Kind, detail: Detail, url: Option<String>) {
+    fn add(&mut self, kind: Kind, detail: Detail, url: Option<String>, since: Timestamp) {
         let rule = self.rules.rule(kind);
         if rule.enabled {
             self.found.push(Reason {
@@ -39,6 +39,7 @@ impl<'a> Reasons<'a> {
                 priority: rule.priority,
                 detail,
                 url,
+                since,
             });
         }
     }
@@ -54,7 +55,7 @@ impl<'a> Reasons<'a> {
         let limit = self.rules.nudge_after_days;
         let idle = updated_at.days_until(now);
         if limit > 0 && !self.found.is_empty() && !self.has_todo() && idle >= limit {
-            self.add(Kind::Nudge, Detail::Idle(idle), None);
+            self.add(Kind::Nudge, Detail::Idle(idle), None, updated_at);
         }
     }
 }
@@ -64,6 +65,8 @@ struct ThreadView<'a> {
     thread: &'a Thread,
     opened_by_me: bool,
     last_by_me: bool,
+    /// When the last word was said: since when the other side waits.
+    last_at: Timestamp,
     i_took_part: bool,
     /// Someone mentioned me after the last thing I did.
     mention_pending: bool,
@@ -103,6 +106,7 @@ fn view<'a>(
         thread,
         opened_by_me: first.author.is_me,
         last_by_me: last.author.is_me,
+        last_at: last.at,
         i_took_part: my_last_here.is_some(),
         mention_pending: notes.iter().any(|note| {
             !note.author.is_me && note.mentions_me && answered_at.is_none_or(|at| note.at > at)
@@ -116,6 +120,11 @@ fn count(threads: &[&ThreadView]) -> Detail {
 
 fn first_url(threads: &[&ThreadView]) -> Option<String> {
     threads.first().map(|view| view.thread.url.clone())
+}
+
+/// Since when the one that has waited longest waits.
+fn oldest(threads: &[&ThreadView]) -> Option<Timestamp> {
+    threads.iter().map(|view| view.last_at).min()
 }
 
 fn triage_change(change: &ChangeRequest, rules: &Rules, now: Timestamp) -> Option<Task> {
@@ -134,6 +143,7 @@ fn triage_change(change: &ChangeRequest, rules: &Rules, now: Timestamp) -> Optio
         .iter()
         .filter_map(|thread| view(thread, rules.ignore_bots, my_last_act))
         .collect();
+    let updated = change.item.updated_at;
 
     let mut reasons = Reasons::new(rules);
     let role = if change.author.is_me {
@@ -146,7 +156,7 @@ fn triage_change(change: &ChangeRequest, rules: &Rules, now: Timestamp) -> Optio
         Role::Reviewer
     } else {
         if change.assigned_to_me {
-            reasons.add(Kind::Assigned, Detail::None, None);
+            reasons.add(Kind::Assigned, Detail::None, None, change.item.created_at);
         }
         let waiting_on_me: Vec<_> = threads.iter().filter(|view| owes_reply(view)).collect();
         if !waiting_on_me.is_empty() {
@@ -154,6 +164,7 @@ fn triage_change(change: &ChangeRequest, rules: &Rules, now: Timestamp) -> Optio
                 Kind::ReplyNeeded,
                 count(&waiting_on_me),
                 first_url(&waiting_on_me),
+                oldest(&waiting_on_me).unwrap_or(updated),
             );
         }
         if change.assigned_to_me {
@@ -163,7 +174,7 @@ fn triage_change(change: &ChangeRequest, rules: &Rules, now: Timestamp) -> Optio
         }
     };
 
-    reasons.nudge_if_idle(change.item.updated_at, now);
+    reasons.nudge_if_idle(updated, now);
     if reasons.found.is_empty() {
         return None;
     }
@@ -173,6 +184,10 @@ fn triage_change(change: &ChangeRequest, rules: &Rules, now: Timestamp) -> Optio
         role,
         counterpart,
         reasons.found,
+        change.tickets.clone(),
+        None,
+        now,
+        &rules.urgency,
     ))
 }
 
@@ -187,6 +202,9 @@ fn owes_reply(view: &ThreadView) -> bool {
 
 fn as_author(change: &ChangeRequest, threads: &[ThreadView], reasons: &mut Reasons) {
     let rules = reasons.rules;
+    let updated = change.item.updated_at;
+    let created = change.item.created_at;
+    let pushed = change.last_push_at.unwrap_or(updated);
 
     // Open threads where a reviewer spoke last, and comments that call me.
     let to_answer: Vec<_> = threads
@@ -200,7 +218,12 @@ fn as_author(change: &ChangeRequest, threads: &[ThreadView], reasons: &mut Reaso
         })
         .collect();
     if !to_answer.is_empty() {
-        reasons.add(Kind::ReplyNeeded, count(&to_answer), first_url(&to_answer));
+        reasons.add(
+            Kind::ReplyNeeded,
+            count(&to_answer),
+            first_url(&to_answer),
+            oldest(&to_answer).unwrap_or(updated),
+        );
     }
 
     // Open threads where I spoke last: mine to close, or the reviewer's.
@@ -213,20 +236,25 @@ fn as_author(change: &ChangeRequest, threads: &[ThreadView], reasons: &mut Reaso
             Resolver::Author => Kind::ThreadToResolve,
             Resolver::Reviewer | Resolver::Anyone => Kind::AwaitingReply,
         };
-        reasons.add(kind, count(&answered), first_url(&answered));
+        reasons.add(
+            kind,
+            count(&answered),
+            first_url(&answered),
+            oldest(&answered).unwrap_or(updated),
+        );
     }
 
     match change.checks {
-        Checks::Failed => reasons.add(Kind::ChecksFailed, Detail::None, None),
-        Checks::Running => reasons.add(Kind::ChecksRunning, Detail::None, None),
+        Checks::Failed => reasons.add(Kind::ChecksFailed, Detail::None, None, pushed),
+        Checks::Running => reasons.add(Kind::ChecksRunning, Detail::None, None, pushed),
         Checks::Passed | Checks::None => {}
     }
     if change.conflicts {
-        reasons.add(Kind::Conflicts, Detail::None, None);
+        reasons.add(Kind::Conflicts, Detail::None, None, updated);
     }
 
     if change.draft {
-        reasons.add(Kind::DraftToFinish, Detail::None, None);
+        reasons.add(Kind::DraftToFinish, Detail::None, None, created);
         return;
     }
 
@@ -241,9 +269,9 @@ fn as_author(change: &ChangeRequest, threads: &[ThreadView], reasons: &mut Reaso
 
     let mergeable = fully_approved && checks_green && !change.conflicts && !any_open;
     if mergeable && change.i_can_merge {
-        reasons.add(Kind::ReadyToMerge, Detail::None, None);
+        reasons.add(Kind::ReadyToMerge, Detail::None, None, updated);
     } else if !fully_approved && others.is_empty() && change.i_can_merge {
-        reasons.add(Kind::NoReviewer, Detail::None, None);
+        reasons.add(Kind::NoReviewer, Detail::None, None, created);
     } else if !fully_approved || !change.i_can_merge {
         // Either reviewers owe an approval, or only a maintainer can merge.
         let pending = others
@@ -258,6 +286,8 @@ fn as_author(change: &ChangeRequest, threads: &[ThreadView], reasons: &mut Reaso
                 pending,
             },
             None,
+            // Reviewers have been waited on since the last thing I gave them.
+            change.last_push_at.unwrap_or(created),
         );
     }
 }
@@ -271,13 +301,14 @@ fn as_reviewer(
     reasons: &mut Reasons,
 ) -> bool {
     let rules = reasons.rules;
+    let updated = change.item.updated_at;
 
     if change.draft {
         match rules.others_drafts {
             OthersDrafts::Review => {}
             OthersDrafts::Ignore => return false,
             OthersDrafts::Wait => {
-                reasons.add(Kind::DraftByOther, Detail::None, None);
+                reasons.add(Kind::DraftByOther, Detail::None, None, updated);
                 return true;
             }
         }
@@ -304,33 +335,48 @@ fn as_reviewer(
     let new_commits = after_my_act(change.last_push_at);
 
     if !reviewed_before {
-        reasons.add(Kind::ReviewRequested, Detail::None, None);
+        reasons.add(
+            Kind::ReviewRequested,
+            Detail::None,
+            None,
+            change.review_requested_at.unwrap_or(change.item.created_at),
+        );
     } else if state != ReviewState::Approved || rules.re_review_after_approval {
         let opened_any = threads.iter().any(|view| view.opened_by_me);
-        let fired = |trigger: &Trigger| match trigger {
-            Trigger::AuthorReplied => !replies.is_empty(),
-            Trigger::NewCommits => new_commits,
-            Trigger::ReRequested => {
-                state == ReviewState::Pending && after_my_act(change.review_requested_at)
-            }
-            Trigger::ApprovalReset => state == ReviewState::ApprovalReset,
-            Trigger::AllThreadsAnswered => {
-                opened_any
-                    && mine_unanswered.is_empty()
-                    && (!mine_answered.is_empty() || new_commits)
-            }
+        // Whether a trigger fired, and when what fired it happened.
+        let fired = |trigger: Trigger| -> Option<Timestamp> {
+            let (fired, at) = match trigger {
+                Trigger::AuthorReplied => (!replies.is_empty(), oldest(&replies)),
+                Trigger::NewCommits => (new_commits, change.last_push_at),
+                Trigger::ReRequested => (
+                    state == ReviewState::Pending && after_my_act(change.review_requested_at),
+                    change.review_requested_at,
+                ),
+                Trigger::ApprovalReset => {
+                    (state == ReviewState::ApprovalReset, change.last_push_at)
+                }
+                Trigger::AllThreadsAnswered => (
+                    opened_any
+                        && mine_unanswered.is_empty()
+                        && (!mine_answered.is_empty() || new_commits),
+                    oldest(&mine_answered).or(change.last_push_at),
+                ),
+            };
+            fired.then(|| at.unwrap_or(updated))
         };
-        let triggers: Vec<Trigger> = rules
+        let due: Vec<(Trigger, Timestamp)> = rules
             .re_review_triggers
             .iter()
-            .copied()
-            .filter(|trigger| fired(trigger))
+            .filter_map(|trigger| fired(*trigger).map(|at| (*trigger, at)))
             .collect();
-        if !triggers.is_empty() {
+        // Due since the first thing that made it due.
+        if let Some(since) = due.iter().map(|(_, at)| *at).min() {
+            let triggers = due.iter().map(|(trigger, _)| *trigger).collect();
             reasons.add(
                 Kind::ReReview,
                 Detail::Triggers(triggers),
                 first_url(&replies),
+                since,
             );
         }
     }
@@ -354,15 +400,26 @@ fn as_reviewer(
             Kind::ThreadToResolve,
             count(&to_resolve),
             first_url(&to_resolve),
+            oldest(&to_resolve).unwrap_or(updated),
         );
     }
     if !to_answer.is_empty() {
-        reasons.add(Kind::ReplyNeeded, count(&to_answer), first_url(&to_answer));
+        reasons.add(
+            Kind::ReplyNeeded,
+            count(&to_answer),
+            first_url(&to_answer),
+            oldest(&to_answer).unwrap_or(updated),
+        );
     }
 
     // Nothing for me: the author has the ball, unless I am done with it.
     if !reasons.has_todo() && reviewed_before && state != ReviewState::Approved {
-        reasons.add(Kind::AwaitingAuthor, count(&mine_unanswered), None);
+        reasons.add(
+            Kind::AwaitingAuthor,
+            count(&mine_unanswered),
+            None,
+            my_last_act.unwrap_or(updated),
+        );
     }
     true
 }
@@ -372,31 +429,34 @@ fn triage_ticket(ticket: &Ticket, rules: &Rules, now: Timestamp) -> Option<Task>
         return None;
     }
     let mut reasons = Reasons::new(rules);
+    let updated = ticket.item.updated_at;
 
     if ticket.mention_pending {
-        reasons.add(Kind::TicketMentioned, Detail::None, None);
+        reasons.add(Kind::TicketMentioned, Detail::None, None, updated);
     }
     if !ticket.blocked_by.is_empty() {
         reasons.add(
             Kind::TicketBlocked,
             Detail::BlockedBy(ticket.blocked_by.clone()),
             None,
+            updated,
         );
     } else if rules.is_waiting_status(&ticket.status) {
         reasons.add(
             Kind::TicketBlocked,
             Detail::Status(ticket.status.clone()),
             None,
+            updated,
         );
     } else {
         let kind = match ticket.category {
             StatusCategory::InProgress => Kind::TicketInProgress,
             _ => Kind::TicketTodo,
         };
-        reasons.add(kind, Detail::Status(ticket.status.clone()), None);
+        reasons.add(kind, Detail::Status(ticket.status.clone()), None, updated);
     }
 
-    reasons.nudge_if_idle(ticket.item.updated_at, now);
+    reasons.nudge_if_idle(updated, now);
     if reasons.found.is_empty() {
         return None;
     }
@@ -405,5 +465,9 @@ fn triage_ticket(ticket: &Ticket, rules: &Rules, now: Timestamp) -> Option<Task>
         Role::Assignee,
         None,
         reasons.found,
+        Vec::new(),
+        ticket.priority,
+        now,
+        &rules.urgency,
     ))
 }

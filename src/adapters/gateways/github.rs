@@ -1,10 +1,18 @@
 //! GitHub: open pull requests that involve me and open issues assigned to
 //! me, read through four searches of the GraphQL API, side by side.
+//!
+//! GitHub bills a query by the nodes it may return, and a refresh every
+//! thirty seconds adds up fast. So the searches ask only for what is light
+//! and can change silently (checks, review decision, requests); a pull
+//! request's conversations, the expensive part, are read again only when
+//! its `updatedAt` moved, and kept in the cache meanwhile.
 
+use std::sync::Arc;
 use std::thread;
 
 use serde_json::{Value, json};
 
+use super::cache::Cache;
 use super::session::{Credential, Session, mentions};
 use crate::entities::change_request::{ChangeRequest, Checks, Note, ReviewState, Reviewer, Thread};
 use crate::entities::item::{Actor, ItemRef, WorkItem};
@@ -19,30 +27,42 @@ const SEARCH: &str = "query($q: String!, $after: String) {
     nodes {
       __typename
       ... on Issue {
-        number title url updatedAt
+        number title url createdAt updatedAt
         repository { nameWithOwner }
         assignees(first: 20) { nodes { login } }
       }
       ... on PullRequest {
-        number title url updatedAt isDraft mergeable reviewDecision
+        id number title url createdAt updatedAt isDraft mergeable reviewDecision headRefName
         repository { nameWithOwner viewerPermission }
         author { __typename login }
         assignees(first: 20) { nodes { login } }
         reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login } } } }
         latestReviews(first: 30) { nodes { author { __typename login } state } }
-        reviews(last: 50) { nodes { author { login } submittedAt } }
-        reviewThreads(first: 60) { nodes { isResolved comments(first: 40) { nodes {
-          author { __typename login } createdAt body url
-        } } } }
-        comments(last: 30) { nodes { author { __typename login } createdAt body url } }
         commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
-        timelineItems(last: 30, itemTypes: [REVIEW_REQUESTED_EVENT]) { nodes {
-          ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } } }
-        } }
       }
     }
   }
 }";
+
+/// The conversations of a few pull requests, by id.
+const CONVERSATIONS: &str = "query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on PullRequest {
+      id
+      reviews(last: 50) { nodes { author { login } submittedAt } }
+      reviewThreads(first: 60) { nodes { isResolved comments(first: 40) { nodes {
+        author { __typename login } createdAt body url
+      } } } }
+      comments(last: 30) { nodes { author { __typename login } createdAt body url } }
+      timelineItems(last: 30, itemTypes: [REVIEW_REQUESTED_EVENT]) { nodes {
+        ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } } }
+      } }
+    }
+  }
+}";
+
+/// How many pull requests' conversations are asked for in one query.
+const CONVERSATIONS_PER_QUERY: usize = 10;
 
 /// What to look for. `@me` is the token's owner.
 const SEARCHES: [&str; 4] = [
@@ -59,14 +79,17 @@ pub struct GitHub {
     name: String,
     host: String,
     session: Session,
+    /// Where conversations already read are kept.
+    cache: Arc<Cache>,
 }
 
 impl GitHub {
-    pub fn new(name: String, host: String, credential: Credential) -> Self {
+    pub fn new(name: String, host: String, credential: Credential, cache: Arc<Cache>) -> Self {
         Self {
             name,
             host,
             session: Session::new(credential),
+            cache,
         }
     }
 
@@ -107,25 +130,91 @@ impl GitHub {
         }
 
         let mut seen = Vec::new();
-        let mut items = Vec::new();
-        for nodes in found {
-            for node in nodes {
-                let url = node["url"].as_str().unwrap_or_default().to_string();
-                if url.is_empty() || seen.contains(&url) {
-                    continue;
-                }
+        let mut nodes = Vec::new();
+        for node in found.into_iter().flatten() {
+            let url = node["url"].as_str().unwrap_or_default().to_string();
+            if !url.is_empty() && !seen.contains(&url) {
                 seen.push(url);
-                let item = match node["__typename"].as_str() {
-                    Some("PullRequest") => {
-                        read_pull_request(&node, &me, &self.name).map(WorkItem::Change)
-                    }
-                    Some("Issue") => read_issue(&node, &me, &self.name).map(WorkItem::Ticket),
-                    _ => None,
-                };
-                items.extend(item);
+                nodes.push(node);
             }
         }
-        Ok(items)
+
+        let pull_requests: Vec<&Value> = nodes
+            .iter()
+            .filter(|node| node["__typename"].as_str() == Some("PullRequest"))
+            .collect();
+        let conversations = self.conversations(token, &me, &pull_requests)?;
+
+        Ok(nodes
+            .iter()
+            .filter_map(|node| match node["__typename"].as_str() {
+                Some("PullRequest") => {
+                    let talk = conversations
+                        .iter()
+                        .find(|(id, _)| Some(id.as_str()) == node["id"].as_str())
+                        .map(|(_, talk)| talk)
+                        .unwrap_or(&Value::Null);
+                    read_pull_request(node, talk, &me, &self.name).map(WorkItem::Change)
+                }
+                Some("Issue") => read_issue(node, &me, &self.name).map(WorkItem::Ticket),
+                _ => None,
+            })
+            .collect())
+    }
+
+    /// The conversations of these pull requests, by id: from the cache for
+    /// those that have not moved, asked for in batches for the others.
+    fn conversations(
+        &self,
+        token: &str,
+        me: &str,
+        pull_requests: &[&Value],
+    ) -> Result<Vec<(String, Value)>, SourceError> {
+        // Per account: who "me" is does not change what is stored, but
+        // what another account may see does.
+        let shelf = format!("github-conversation/1/{}/{me}", self.name);
+        let mut known = Vec::new();
+        let mut moved: Vec<(&str, &str)> = Vec::new();
+        for pull_request in pull_requests {
+            let (Some(id), Some(updated_at)) = (
+                pull_request["id"].as_str(),
+                pull_request["updatedAt"].as_str(),
+            ) else {
+                continue;
+            };
+            let cached = self
+                .cache
+                .get(&shelf, id)
+                .filter(|entry| entry.version == updated_at)
+                .and_then(|entry| serde_json::from_str(&entry.value).ok());
+            match cached {
+                Some(talk) => known.push((id.to_string(), talk)),
+                None => moved.push((id, updated_at)),
+            }
+        }
+
+        for batch in moved.chunks(CONVERSATIONS_PER_QUERY) {
+            let ids: Vec<&str> = batch.iter().map(|(id, _)| *id).collect();
+            let mut data = self.graphql(token, CONVERSATIONS, json!({ "ids": ids }))?;
+            for talk in data["nodes"].as_array_mut().into_iter().flatten() {
+                let Some(id) = talk["id"].as_str().map(str::to_string) else {
+                    continue;
+                };
+                if let Some((_, updated_at)) = batch.iter().find(|(wanted, _)| *wanted == id) {
+                    self.cache.put(&shelf, &id, updated_at, &talk.to_string());
+                }
+                known.push((id, talk.take()));
+            }
+        }
+
+        let open: Vec<&str> = pull_requests
+            .iter()
+            .filter_map(|pull_request| pull_request["id"].as_str())
+            .collect();
+        if self.cache.all(&shelf).len() > open.len() {
+            self.cache.keep_only(&shelf, &open);
+        }
+        Ok(known)
     }
 
     /// My login and every result of one search, up to `MAX_PAGES` pages.
@@ -190,6 +279,7 @@ fn item(node: &Value, source: &str) -> Option<ItemRef> {
         reference: format!("#{}", node["number"].as_u64()?),
         title: node["title"].as_str()?.to_string(),
         url: node["url"].as_str()?.to_string(),
+        created_at: time(&node["createdAt"])?,
         updated_at: time(&node["updatedAt"])?,
     })
 }
@@ -207,7 +297,9 @@ fn note(comment: &Value, me: &str) -> Option<Note> {
     })
 }
 
-fn read_pull_request(node: &Value, me: &str, source: &str) -> Option<ChangeRequest> {
+/// `node` is what the search says of the pull request; `talk` is its
+/// conversations, read apart.
+fn read_pull_request(node: &Value, talk: &Value, me: &str, source: &str) -> Option<ChangeRequest> {
     // A pending request overrides whatever that person submitted before.
     let mut reviewers: Vec<Reviewer> = nodes(&node["reviewRequests"])
         .filter(|request| request["requestedReviewer"]["login"].is_string())
@@ -238,7 +330,7 @@ fn read_pull_request(node: &Value, me: &str, source: &str) -> Option<ChangeReque
         });
     }
 
-    let mut threads: Vec<Thread> = nodes(&node["reviewThreads"])
+    let mut threads: Vec<Thread> = nodes(&talk["reviewThreads"])
         .filter_map(|thread| {
             let comments = &thread["comments"];
             Some(Thread {
@@ -253,7 +345,7 @@ fn read_pull_request(node: &Value, me: &str, source: &str) -> Option<ChangeReque
         .collect();
     // Conversation comments are not threads: each stands alone and only
     // matters when it calls me.
-    threads.extend(nodes(&node["comments"]).filter_map(|comment| {
+    threads.extend(nodes(&talk["comments"]).filter_map(|comment| {
         Some(Thread {
             url: comment["url"].as_str()?.to_string(),
             resolvable: false,
@@ -267,17 +359,19 @@ fn read_pull_request(node: &Value, me: &str, source: &str) -> Option<ChangeReque
 
     Some(ChangeRequest {
         item: item(node, source)?,
+        branch: node["headRefName"].as_str().map(str::to_string),
+        tickets: Vec::new(),
         author: actor(&node["author"], me),
         assigned_to_me: assigned_to(node, me),
         reviewers,
         draft: node["isDraft"].as_bool().unwrap_or(false),
         threads,
-        my_last_activity_at: nodes(&node["reviews"])
+        my_last_activity_at: nodes(&talk["reviews"])
             .filter(|review| review["author"]["login"].as_str() == Some(me))
             .filter_map(|review| time(&review["submittedAt"]))
             .max(),
         last_push_at: time(&head["committedDate"]),
-        review_requested_at: nodes(&node["timelineItems"])
+        review_requested_at: nodes(&talk["timelineItems"])
             .filter(|event| event["requestedReviewer"]["login"].as_str() == Some(me))
             .filter_map(|event| time(&event["createdAt"]))
             .max(),
@@ -310,6 +404,7 @@ fn read_issue(node: &Value, me: &str, source: &str) -> Option<Ticket> {
         item: item(node, source)?,
         status: "Open".to_string(),
         category: StatusCategory::Todo,
+        priority: None,
         blocked_by: Vec::new(),
         mention_pending: false,
     })
@@ -322,7 +417,7 @@ mod tests {
     fn pull_request() -> Value {
         json!({
             "__typename": "PullRequest", "number": 12, "title": "Fix chords",
-            "url": "https://github.test/o/app/pull/12", "updatedAt": "2026-09-28T10:00:00Z",
+            "url": "https://github.test/o/app/pull/12", "createdAt": "2026-09-18T10:00:00Z", "updatedAt": "2026-09-28T10:00:00Z",
             "isDraft": false, "mergeable": "CONFLICTING", "reviewDecision": "REVIEW_REQUIRED",
             "repository": { "nameWithOwner": "o/app", "viewerPermission": "READ" },
             "author": { "__typename": "User", "login": "ben" },
@@ -362,7 +457,7 @@ mod tests {
 
     #[test]
     fn pull_request_maps_review_state_and_history() {
-        let change = read_pull_request(&pull_request(), "sam", "github").unwrap();
+        let change = read_pull_request(&pull_request(), &pull_request(), "sam", "github").unwrap();
 
         assert_eq!(change.item.id(), "github:o/app#12");
         // Requested again: pending, even though I commented before.
@@ -388,10 +483,19 @@ mod tests {
     }
 
     #[test]
+    fn a_pull_request_whose_conversations_are_unknown_still_shows() {
+        let change = read_pull_request(&pull_request(), &Value::Null, "sam", "github").unwrap();
+        assert_eq!(change.my_review(), Some(ReviewState::Pending));
+        assert_eq!(change.checks, Checks::Failed);
+        assert!(change.threads.is_empty());
+        assert_eq!(change.my_last_activity_at, None);
+    }
+
+    #[test]
     fn a_repository_without_required_reviews_counts_as_approved() {
         let mut node = pull_request();
         node["reviewDecision"] = Value::Null;
-        let change = read_pull_request(&node, "sam", "github").unwrap();
+        let change = read_pull_request(&node, &node, "sam", "github").unwrap();
         assert!(change.approved);
         assert_eq!(change.approvals_missing, 0);
     }
@@ -400,7 +504,7 @@ mod tests {
     fn only_assigned_issues_are_tickets() {
         let mut issue = json!({
             "__typename": "Issue", "number": 3, "title": "Crash", "url": "https://i/3",
-            "updatedAt": "2026-09-28T10:00:00Z", "repository": { "nameWithOwner": "o/tool" },
+            "createdAt": "2026-09-18T10:00:00Z", "updatedAt": "2026-09-28T10:00:00Z", "repository": { "nameWithOwner": "o/tool" },
             "assignees": { "nodes": [] },
         });
         assert!(read_issue(&issue, "sam", "github").is_none());

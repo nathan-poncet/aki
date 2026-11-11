@@ -95,6 +95,80 @@ impl Layout {
     }
 }
 
+/// What a pane puts first.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Sort {
+    /// The highest urgency score: rule, time waiting and ticket together.
+    #[default]
+    Urgency,
+    /// The rules' own order, the freshest first among equals.
+    Rule,
+    /// What has waited longest.
+    Waiting,
+    /// What moved most recently.
+    Updated,
+    /// What was opened first.
+    Created,
+}
+
+impl Sort {
+    pub const ALL: [Sort; 5] = [
+        Sort::Urgency,
+        Sort::Rule,
+        Sort::Waiting,
+        Sort::Updated,
+        Sort::Created,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Sort::Urgency => "urgency",
+            Sort::Rule => "rule",
+            Sort::Waiting => "waiting",
+            Sort::Updated => "updated",
+            Sort::Created => "created",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|sort| sort.name() == name)
+    }
+
+    pub fn next(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|other| *other == self)
+            .unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
+    }
+
+    /// Puts `tasks` in this order, or in the opposite one.
+    pub fn apply(self, tasks: &mut [&Task], reversed: bool) {
+        use std::cmp::Reverse;
+        // The item's id settles ties, so the order never flickers.
+        match self {
+            Sort::Urgency => tasks
+                .sort_by_key(|task| (Reverse(task.urgency.score()), task.since, task.item.id())),
+            Sort::Rule => tasks.sort_by_key(|task| {
+                (
+                    task.bucket(),
+                    task.priority(),
+                    Reverse(task.since),
+                    task.item.id(),
+                )
+            }),
+            Sort::Waiting => tasks.sort_by_key(|task| (task.since, task.item.id())),
+            Sort::Updated => {
+                tasks.sort_by_key(|task| (Reverse(task.item.updated_at), task.item.id()))
+            }
+            Sort::Created => tasks.sort_by_key(|task| (task.item.created_at, task.item.id())),
+        }
+        if reversed {
+            tasks.reverse();
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pane {
     /// Stable while the desk lives; lets an interface remember where the
@@ -104,6 +178,19 @@ pub struct Pane {
     pub title: String,
     pub filter: Filter,
     pub grouping: Grouping,
+    pub sort: Sort,
+    /// The sort's opposite order.
+    pub reversed: bool,
+}
+
+/// A pane as written down, before the desk adopts it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PaneDraft {
+    pub title: String,
+    pub filter: Filter,
+    pub grouping: Grouping,
+    pub sort: Sort,
+    pub reversed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,15 +227,17 @@ fn side(bucket: Bucket) -> Filter {
 
 impl Space {
     /// What a pane of this space shows: the board through the space's scope
-    /// and the pane's filter, packed by the pane's grouping. Groups come in
-    /// the order of their most pressing task.
+    /// and the pane's filter, in the pane's order, packed by the pane's
+    /// grouping. Groups come in the order of their first task.
     pub fn groups<'a>(&self, pane: &Pane, board: &'a Board) -> Vec<Group<'a>> {
         let mut groups: Vec<Group<'a>> = Vec::new();
-        let tasks = board
+        let mut tasks: Vec<&Task> = board
             .todo
             .iter()
             .chain(&board.waiting)
-            .filter(|task| self.scope.matches(task) && pane.filter.matches(task));
+            .filter(|task| self.scope.matches(task) && pane.filter.matches(task))
+            .collect();
+        pane.sort.apply(&mut tasks, pane.reversed);
         for task in tasks {
             let key = match pane.grouping {
                 Grouping::None => GroupKey::All,
@@ -198,8 +287,7 @@ pub struct SpaceDraft {
     pub name: String,
     pub scope: Filter,
     pub layout: Layout,
-    /// (title, filter, grouping)
-    pub panes: Vec<(String, Filter, Grouping)>,
+    pub panes: Vec<PaneDraft>,
 }
 
 impl Desk {
@@ -253,18 +341,22 @@ impl Desk {
     fn adopt(&mut self, draft: SpaceDraft) {
         let mut panes = draft.panes;
         if panes.is_empty() {
-            panes = vec![
-                (String::new(), side(Bucket::Todo), Grouping::None),
-                (String::new(), side(Bucket::Waiting), Grouping::None),
-            ];
+            panes = [Bucket::Todo, Bucket::Waiting]
+                .map(|bucket| PaneDraft {
+                    filter: side(bucket),
+                    ..PaneDraft::default()
+                })
+                .to_vec();
         }
         let panes = panes
             .into_iter()
-            .map(|(title, filter, grouping)| Pane {
+            .map(|draft| Pane {
                 id: self.id(),
-                title,
-                filter,
-                grouping,
+                title: draft.title,
+                filter: draft.filter,
+                grouping: draft.grouping,
+                sort: draft.sort,
+                reversed: draft.reversed,
             })
             .collect();
         self.spaces.push(Space {
@@ -407,31 +499,11 @@ impl Desk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::item::ItemRef;
-    use crate::entities::task::{Detail, Reason};
+    use crate::entities::task::samples;
     use crate::entities::time::Timestamp;
 
     fn task(source: &str, container: &str, reference: &str, kind: Kind) -> Task {
-        Task {
-            item: ItemRef {
-                source: source.into(),
-                container: container.into(),
-                reference: reference.into(),
-                title: "Title".into(),
-                url: "https://example.test".into(),
-                updated_at: Timestamp(0),
-            },
-            role: Role::Author,
-            counterpart: None,
-            reasons: vec![Reason {
-                kind,
-                bucket: kind.default_bucket(),
-                priority: kind.default_priority(),
-                detail: Detail::None,
-                url: None,
-            }],
-            since: Timestamp(0),
-        }
+        samples::task(source, container, reference, kind, None)
     }
 
     fn board() -> Board {
@@ -513,6 +585,64 @@ mod tests {
     }
 
     #[test]
+    fn a_pane_orders_its_tasks_its_own_way() {
+        // (reference, rule, waiting since, created, updated, urgency score)
+        let mut old_draft = task("gitlab", "g/api", "!old-draft", Kind::DraftToFinish);
+        let mut fresh_review = task("gitlab", "g/api", "!fresh-review", Kind::ReviewRequested);
+        let mut stale_reply = task("gitlab", "g/api", "!stale-reply", Kind::ReplyNeeded);
+        for (task, since, created, updated, waiting) in [
+            (&mut old_draft, 10, 10, 900, 60),
+            (&mut fresh_review, 800, 700, 800, 0),
+            (&mut stale_reply, 300, 200, 850, 45),
+        ] {
+            task.since = Timestamp(since);
+            task.item.created_at = Timestamp(created);
+            task.item.updated_at = Timestamp(updated);
+            task.urgency.waiting = waiting;
+        }
+        let board = Board::new(
+            vec![old_draft, fresh_review, stale_reply],
+            vec!["gitlab".into()],
+            Vec::new(),
+            Timestamp(1_000),
+        );
+        let mut desk = Desk::starting(&["gitlab".into()]);
+        let mut order = |sort: Sort, reversed: bool| -> Vec<String> {
+            let pane = desk.pane_mut();
+            pane.sort = sort;
+            pane.reversed = reversed;
+            let space = desk.space();
+            references(&space.groups(space.pane(), &board)[0])
+        };
+
+        // Scores: reply 70+45, review 90+0, draft 10+60.
+        assert_eq!(
+            order(Sort::Urgency, false),
+            ["!stale-reply", "!fresh-review", "!old-draft"]
+        );
+        assert_eq!(
+            order(Sort::Rule, false),
+            ["!fresh-review", "!stale-reply", "!old-draft"]
+        );
+        assert_eq!(
+            order(Sort::Waiting, false),
+            ["!old-draft", "!stale-reply", "!fresh-review"]
+        );
+        assert_eq!(
+            order(Sort::Updated, false),
+            ["!old-draft", "!stale-reply", "!fresh-review"]
+        );
+        assert_eq!(
+            order(Sort::Created, false),
+            ["!old-draft", "!stale-reply", "!fresh-review"]
+        );
+        assert_eq!(
+            order(Sort::Created, true),
+            ["!fresh-review", "!stale-reply", "!old-draft"]
+        );
+    }
+
+    #[test]
     fn panes_split_move_travel_and_close() {
         let mut desk = Desk::starting(&["gitlab".into(), "github".into()]);
         let todo = desk.space().panes[0].id;
@@ -571,6 +701,10 @@ mod tests {
         for layout in Layout::ALL {
             assert_eq!(Layout::from_name(layout.name()), Some(layout));
         }
+        for sort in Sort::ALL {
+            assert_eq!(Sort::from_name(sort.name()), Some(sort));
+        }
+        assert_eq!(Sort::Created.next(), Sort::Urgency);
         assert_eq!(Layout::Grid.next(), Layout::Columns);
         assert_eq!(Grouping::Role.next(), Grouping::None);
     }

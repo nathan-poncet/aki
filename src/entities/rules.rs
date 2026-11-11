@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use super::task::{Bucket, Kind, Trigger};
+use super::urgency::UrgencyRules;
 
 /// Who is expected to resolve a review thread once it is answered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,6 +97,8 @@ pub struct Rules {
     pub nudge_after_days: u32,
     /// Ticket statuses that mean "not mine to move", compared case-insensitively.
     pub ticket_waiting_statuses: Vec<String>,
+    /// The weights of the urgency score.
+    pub urgency: UrgencyRules,
 }
 
 impl Default for Rules {
@@ -116,6 +119,7 @@ impl Default for Rules {
             ticket_waiting_statuses: ["blocked", "on hold", "in review", "waiting"]
                 .map(String::from)
                 .to_vec(),
+            urgency: UrgencyRules::default(),
         }
     }
 }

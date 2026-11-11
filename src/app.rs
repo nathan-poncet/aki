@@ -2,11 +2,14 @@
 
 use std::io::IsTerminal;
 use std::process::ExitCode;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
+use std::time::Duration;
 
 use crate::adapters::config::{self, Config, SourceConfig};
 use crate::adapters::controllers::cli::{self, Command};
+use crate::adapters::gateways::cache::Cache;
+use crate::adapters::gateways::cached::CachedSource;
 use crate::adapters::gateways::desk_file::DeskFileStore;
 use crate::adapters::gateways::github::GitHub;
 use crate::adapters::gateways::gitlab::GitLab;
@@ -31,32 +34,49 @@ fn installed(cli: &str) -> bool {
         .is_some_and(|path| std::env::split_paths(&path).any(|folder| folder.join(cli).is_file()))
 }
 
-fn connect(sources: Vec<SourceConfig>) -> Vec<Box<dyn WorkSource>> {
+/// The SQLite file everything already read is kept in. When it cannot be
+/// opened, a cache that lasts as long as the process does the job.
+fn open_cache() -> Arc<Cache> {
+    Arc::new(Cache::open(&config::cache_path()).unwrap_or_else(|_| Cache::in_memory()))
+}
+
+/// The sources, each remembering its last reading. `fresh_for` is how old
+/// that reading may be to stand for a new one.
+fn connect(
+    sources: Vec<SourceConfig>,
+    cache: &Arc<Cache>,
+    fresh_for: Duration,
+) -> Vec<Box<dyn WorkSource>> {
     sources
         .into_iter()
         .map(|source| -> Box<dyn WorkSource> {
-            match source {
+            let source: Box<dyn WorkSource> = match source {
                 SourceConfig::GitLab {
                     name,
                     host,
                     credential,
-                } => {
-                    let memory = config::cache_dir().join(format!("{name}-{host}.json"));
-                    Box::new(GitLab::new(name, host, credential, Some(memory)))
-                }
+                } => Box::new(GitLab::new(name, host, credential, Some(cache.clone()))),
                 SourceConfig::GitHub {
                     name,
                     host,
                     credential,
-                } => Box::new(GitHub::new(name, host, credential)),
+                } => Box::new(GitHub::new(name, host, credential, cache.clone())),
                 SourceConfig::Jira {
                     name,
                     site,
                     email,
                     jql,
                     credential,
-                } => Box::new(Jira::new(name, site, email, jql, credential)),
-            }
+                } => Box::new(Jira::new(
+                    name,
+                    site,
+                    email,
+                    jql,
+                    credential,
+                    Some(cache.clone()),
+                )),
+            };
+            Box::new(CachedSource::new(source, cache.clone(), fresh_for))
         })
         .collect()
 }
@@ -90,6 +110,19 @@ pub fn run(arguments: &[String]) -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Command::ConfigInit => return init_config(),
+        Command::CachePath => {
+            println!("{}", config::cache_path().display());
+            return ExitCode::SUCCESS;
+        }
+        Command::CacheClear => {
+            return match Cache::open(&config::cache_path()) {
+                Ok(cache) => {
+                    println!("forgot {} cached entries", cache.clear());
+                    ExitCode::SUCCESS
+                }
+                Err(error) => fail(format!("{}: {error}", config::cache_path().display())),
+            };
+        }
         _ => {}
     }
 
@@ -117,12 +150,24 @@ pub fn run(arguments: &[String]) -> ExitCode {
             only,
             space,
             filter,
+            sort,
+            reversed,
+            fresh,
         } => {
             let keep = match scope(&config, space.as_deref(), filter.as_deref()) {
                 Ok(keep) => keep,
                 Err(message) => return fail(message),
             };
-            list(config, json, count, only, keep, interactive)
+            let show = Show {
+                as_json: json,
+                count,
+                only,
+                keep,
+                order: text::Order { sort, reversed },
+                fresh,
+                color: interactive,
+            };
+            list(config, show)
         }
         Command::Spaces => spaces(&config),
         Command::Watch => watch(config),
@@ -152,7 +197,7 @@ fn init_config() -> ExitCode {
 }
 
 fn doctor(config: Config) -> ExitCode {
-    let sources = connect(config.sources);
+    let sources = connect(config.sources, &open_cache(), Duration::ZERO);
     let mut healthy = true;
     for check in check_sources(&sources) {
         match check.outcome {
@@ -241,15 +286,29 @@ fn spaces(config: &Config) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn list(
-    config: Config,
+/// What `list` was asked to print, and how.
+struct Show {
     as_json: bool,
     count: bool,
     only: Option<Bucket>,
     keep: Vec<Filter>,
+    order: text::Order,
+    fresh: bool,
     color: bool,
-) -> ExitCode {
-    let sources = connect(config.sources);
+}
+
+fn list(config: Config, show: Show) -> ExitCode {
+    let Show {
+        as_json,
+        count,
+        only,
+        keep,
+        order,
+        fresh,
+        color,
+    } = show;
+    let fresh_for = if fresh { Duration::ZERO } else { config.cache };
+    let sources = connect(config.sources, &open_cache(), fresh_for);
     let clock = SystemClock;
     let board = CollectBoard {
         sources: &sources,
@@ -262,19 +321,25 @@ fn list(
     if count {
         println!("{}", text::count(&board));
     } else if as_json {
-        println!("{}", json::board(&board, only));
+        println!("{}", json::board(&board, only, &order));
     } else {
         let style = text::Style {
             color: color && std::env::var_os("NO_COLOR").is_none(),
             // Piped output has no width of its own: give titles room.
             width: if color { terminal_width() } else { 160 },
         };
-        print!("{}", text::board(&board, only, clock.now(), &style));
+        print!("{}", text::board(&board, only, &order, clock.now(), &style));
     }
-    eprint!("{}", text::failures(&board));
+    eprint!("{}", text::failures(&board, clock.now()));
 
-    // Something was read: the list is useful even if a source is down.
-    if board.sources.is_empty() {
+    // Something was read, now or before: the list is useful even if a
+    // source is down.
+    let nothing = board.sources.is_empty()
+        && board
+            .failures
+            .iter()
+            .all(|failure| failure.showing_from.is_none());
+    if nothing {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
@@ -304,7 +369,8 @@ fn watch(config: Config) -> ExitCode {
     // The watch owns the sources and outlives nothing: when the interface
     // quits, the process ends, mid-request or not.
     thread::spawn(move || {
-        let sources = connect(config.sources);
+        // The board always asks; the cache only fills the first seconds.
+        let sources = connect(config.sources, &open_cache(), Duration::ZERO);
         let notifier: &dyn Notifier = if config.notifications {
             &DesktopNotifier
         } else {

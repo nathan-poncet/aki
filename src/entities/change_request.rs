@@ -1,6 +1,7 @@
 //! A merge request or pull request, reduced to what decides whose turn it is.
 
 use super::item::{Actor, ItemRef};
+use super::ticket::{LinkedTicket, keys_in};
 use super::time::Timestamp;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +50,11 @@ pub struct Thread {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChangeRequest {
     pub item: ItemRef,
+    /// The branch the change comes from, when the forge names it.
+    pub branch: Option<String>,
+    /// The tickets this change is about. Sources leave it empty: tying
+    /// changes to tickets is done once everything is read.
+    pub tickets: Vec<LinkedTicket>,
     pub author: Actor,
     pub assigned_to_me: bool,
     pub reviewers: Vec<Reviewer>,
@@ -68,6 +74,17 @@ pub struct ChangeRequest {
 }
 
 impl ChangeRequest {
+    /// Ticket references written in the title or the branch name.
+    pub fn ticket_keys(&self) -> Vec<String> {
+        let mut keys = keys_in(&self.item.title);
+        for key in self.branch.as_deref().map(keys_in).unwrap_or_default() {
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+        keys
+    }
+
     pub fn my_review(&self) -> Option<ReviewState> {
         self.reviewers
             .iter()

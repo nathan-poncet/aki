@@ -49,6 +49,8 @@ cargo install --git https://github.com/nathan-poncet/myturn
 myturn                # live board (the plain list when piped)
 myturn list           # print once; --todo, --waiting, --json, --count
                       #             --space Pro, --filter "repo:web -kind:draft"
+                      #             --sort waiting, --reverse, --fresh
+myturn cache clear    # forget what was read (myturn cache path says where)
 myturn spaces         # your spaces, and where they are kept
 myturn doctor         # check every source
 myturn rules          # every rule, as configured
@@ -58,9 +60,51 @@ myturn config init    # write ~/.config/myturn/config.toml with the defaults
 The board refreshes by itself every 30 seconds (`refresh_seconds`, down to
 5) and sends a desktop notification when something new becomes yours. None
 of the three services pushes events to a personal client, so "live" means
-polling; a refresh costs a handful of light requests, because discussions
-are read again only for items that moved (and are remembered between runs
-in `~/.cache/myturn`).
+polling, and polling is kept cheap by a cache.
+
+## What comes first
+
+Every task has an **urgency** score, computed by myturn and explained in
+the detail pane (`urgency 155 = rule 90, waiting +60, PROJ-580 +5`):
+
+- **the rule** that lists it: a review to do weighs more than a draft to finish;
+- **how long it has waited**, counted from when the ball arrived: since the
+  review was requested, since the oldest unanswered reply, since your last
+  word when you wait on someone;
+- **the ticket behind it**: a change that names a ticket in its title or
+  branch (`PROJ-12`) counts a little more, and takes the points of the
+  ticket's priority when Jira can tell it, even for tickets that are not
+  yours. A ticket weighs its own priority.
+
+Tasks past a score are marked warm `▴`, then hot `▲`. Panes put the most
+urgent first by default; `s` changes the order and `v` reverses it:
+
+| order | first |
+|---|---|
+| `urgency` | the highest score |
+| `rule` | the rules' own order, the freshest first among equals |
+| `waiting` | what has waited longest |
+| `updated` | what moved most recently |
+| `created` | what was opened first |
+
+The weights and thresholds are yours to set under `[urgency]` in the
+configuration; `myturn rules` prints them.
+
+## Cache
+
+Everything read is kept in one SQLite file, `~/.cache/myturn/cache.db`:
+
+- the board opens at once on what was known last time, then refreshes;
+- `myturn list` reuses a reading younger than `cache_seconds` (60 by
+  default) instead of asking again, so it can sit in a prompt or a status
+  bar; `--fresh` asks anyway;
+- a source that is down still shows what it said last, marked as such;
+- a merge request's or pull request's discussions are read again only when
+  it moved, and a ticket looked up for its priority is trusted for half an
+  hour: a refresh is a handful of light requests.
+
+It holds who spoke when and where, never what was said, and no token.
+`myturn cache clear` empties it.
 
 ## Spaces, panes, layouts
 
@@ -91,6 +135,7 @@ pack what it keeps.
 | `/` | filter the pane, applied as you type |
 | `b` | its side: to do → waiting → both |
 | `g` | its grouping: none → repo → kind → source → person → role |
+| `s` `v` | its order: urgency → rule → waiting → updated → created · reverse it |
 | `n` `x` | new pane beside this one (same view, ready to narrow) · close it |
 | `Shift+←` `Shift+→` | move the pane among the others |
 | `m` then `1`-`9` | send the pane to another space |
@@ -117,6 +162,9 @@ is:todo source:gitlab repo:web,api -top:draft by:alex export
 | `top:draft` | the same, looking only at the most pressing reason |
 | `role:author` | `author`, `reviewer`, `assignee`, `participant` |
 | `by:alex` | the person on the other side |
+| `heat:hot,warm` | tasks marked hot or warm (`calm` for the others) |
+| `ticket:PROJ` | changes that name a ticket whose key contains it (`ticket:any`: any ticket) |
+| `priority:high,highest` | tickets of that priority, and the changes that name one |
 | `export` | a word in the reference, title, repository or person |
 | `-term` | everything the term does not keep |
 
@@ -181,11 +229,13 @@ Clean architecture in one crate; dependencies point inward only.
 
 ```
 src/entities    the vocabulary and the rules. Pure: no I/O, no clock, no serde.
-                triage.rs decides whose turn it is; rules.rs is what you can tune;
-                filter.rs is the query language; desk.rs is spaces, panes, groups.
+                triage.rs decides whose turn it is and since when; urgency.rs
+                scores it; rules.rs is what you can tune; filter.rs is the query
+                language; desk.rs is spaces, panes, groups and orders.
 src/use_cases   collect the board, watch it, open the desk, check the sources;
                 ports.rs is what they need from outside (WorkSource, DeskStore, …).
-src/adapters    gateways (GitLab, GitHub, Jira, spaces.toml, the machine),
+src/adapters    gateways (GitLab, GitHub, Jira, spaces.toml, the SQLite cache,
+                the machine),
                 presenters (text, JSON, TUI, wording), the CLI parser, the config file.
 src/app.rs      the composition root: the only place that knows every ring.
 ```
@@ -202,6 +252,9 @@ and every rule applies to it unchanged.
   "requested review from"); pushes and re-requests are read from those.
 - Jira: Cloud only (API token). "Flagged" is not read; use
   `tickets.waiting_statuses` or "is blocked by" links.
+- A change is tied to a ticket by a key in its title or branch name, not
+  by the forge's or the tracker's own links. Without a tracker to confirm
+  it, anything shaped like `PROJ-12` counts as one.
 
 ## License
 

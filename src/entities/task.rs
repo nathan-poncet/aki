@@ -2,7 +2,9 @@
 //! side of the line.
 
 use super::item::ItemRef;
+use super::ticket::{LinkedTicket, Priority};
 use super::time::Timestamp;
+use super::urgency::{Urgency, UrgencyRules, urgency};
 
 /// The line the whole product draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -217,6 +219,8 @@ pub struct Reason {
     pub detail: Detail,
     /// Where to act, when it is more precise than the item itself.
     pub url: Option<String>,
+    /// Since when this has been true, as well as the source lets us know.
+    pub since: Timestamp,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -253,26 +257,47 @@ pub struct Task {
     /// Who I am dealing with: the author when I review, else nobody.
     pub counterpart: Option<String>,
     pub reasons: Vec<Reason>,
-    /// When the ball last moved.
+    /// Since when the most pressing reason has been waiting.
     pub since: Timestamp,
+    /// The tickets this task is about, with what is known of them.
+    pub tickets: Vec<LinkedTicket>,
+    /// Its own priority, when it is a ticket.
+    pub priority_level: Option<Priority>,
+    pub urgency: Urgency,
 }
 
 impl Task {
     /// Built by triage only; `reasons` must not be empty.
+    #[allow(clippy::too_many_arguments)] // every part of a task, said once
     pub(super) fn new(
         item: ItemRef,
         role: Role,
         counterpart: Option<String>,
         mut reasons: Vec<Reason>,
+        tickets: Vec<LinkedTicket>,
+        priority_level: Option<Priority>,
+        now: Timestamp,
+        rules: &UrgencyRules,
     ) -> Self {
         reasons.sort_by_key(|reason| (reason.bucket, reason.priority));
-        let since = item.updated_at;
+        let since = reasons[0].since;
+        let urgency = urgency(
+            reasons[0].priority,
+            since,
+            now,
+            priority_level,
+            &tickets,
+            rules,
+        );
         Self {
             item,
             role,
             counterpart,
             reasons,
             since,
+            tickets,
+            priority_level,
+            urgency,
         }
     }
 
@@ -298,5 +323,60 @@ impl Task {
     /// Where Enter should land: the most pressing reason's place, else the item.
     pub fn target_url(&self) -> &str {
         self.headline().url.as_deref().unwrap_or(&self.item.url)
+    }
+}
+
+/// Ready-made tasks for tests, here and in the outer rings.
+#[cfg(test)]
+pub mod samples {
+    use super::*;
+    use crate::entities::urgency::Heat;
+
+    pub fn reason(kind: Kind) -> Reason {
+        Reason {
+            kind,
+            bucket: kind.default_bucket(),
+            priority: kind.default_priority(),
+            detail: Detail::None,
+            url: None,
+            since: Timestamp(0),
+        }
+    }
+
+    /// A task listed for one rule; reviewing `by` when given, else mine.
+    pub fn task(
+        source: &str,
+        container: &str,
+        reference: &str,
+        kind: Kind,
+        by: Option<&str>,
+    ) -> Task {
+        Task {
+            item: ItemRef {
+                source: source.into(),
+                container: container.into(),
+                reference: reference.into(),
+                title: "Add CSV export".into(),
+                url: "https://example.test/7".into(),
+                created_at: Timestamp(0),
+                updated_at: Timestamp(0),
+            },
+            role: if by.is_some() {
+                Role::Reviewer
+            } else {
+                Role::Author
+            },
+            counterpart: by.map(str::to_string),
+            reasons: vec![reason(kind)],
+            since: Timestamp(0),
+            tickets: Vec::new(),
+            priority_level: None,
+            urgency: Urgency {
+                rule: 100u32.saturating_sub(kind.default_priority()),
+                waiting: 0,
+                ticket: 0,
+                heat: Heat::Calm,
+            },
+        }
     }
 }

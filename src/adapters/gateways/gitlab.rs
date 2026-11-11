@@ -3,18 +3,18 @@
 //!
 //! Each refresh costs three light list calls plus one issue call. The
 //! expensive part, an MR's discussions, is read again only when the MR's
-//! `updatedAt` moved; what was read is kept on disk, so a cold start pays
-//! only for what changed since the last run.
+//! `updatedAt` moved; what was read is kept in the cache, so a cold start
+//! pays only for what changed since the last run.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Mutex, Once};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, Once};
 use std::thread;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::cache::Cache;
 use super::session::{Auth, Credential, Session, mentions};
 use crate::entities::change_request::{ChangeRequest, Checks, Note, ReviewState, Reviewer, Thread};
 use crate::entities::item::{Actor, ItemRef, WorkItem};
@@ -28,7 +28,7 @@ const CONNECTIONS: [&str; 3] = [
     "reviewRequestedMergeRequests",
 ];
 
-const MERGE_REQUEST: &str = "id iid title webUrl draft updatedAt conflicts approved approvalsLeft \
+const MERGE_REQUEST: &str = "id iid title webUrl draft createdAt updatedAt sourceBranch conflicts approved approvalsLeft \
     project { fullPath } author { username bot } headPipeline { status } \
     userPermissions { canMerge } \
     assignees { nodes { username } } \
@@ -64,10 +64,10 @@ pub struct GitLab {
     /// MR id → (`updatedAt` it was read at, its history).
     histories: Mutex<HashMap<String, (String, History)>>,
     /// Where `histories` is kept between runs.
-    memory: Option<PathBuf>,
+    memory: Option<Arc<Cache>>,
     recalled: Once,
-    /// Whether `histories` holds something the disk does not.
-    unsaved: AtomicBool,
+    /// The MR ids read from the network and not stored yet.
+    unsaved: Mutex<Vec<String>>,
 }
 
 impl GitLab {
@@ -75,7 +75,7 @@ impl GitLab {
         name: String,
         host: String,
         credential: Credential,
-        memory: Option<PathBuf>,
+        memory: Option<Arc<Cache>>,
     ) -> Self {
         Self {
             name,
@@ -84,7 +84,7 @@ impl GitLab {
             histories: Mutex::new(HashMap::new()),
             memory,
             recalled: Once::new(),
-            unsaved: AtomicBool::new(false),
+            unsaved: Mutex::new(Vec::new()),
         }
     }
 
@@ -193,7 +193,7 @@ impl GitLab {
             .lock()
             .unwrap()
             .insert(id.to_string(), (updated_at.to_string(), history.clone()));
-        self.unsaved.store(true, Ordering::Relaxed);
+        self.unsaved.lock().unwrap().push(id.to_string());
         Ok(history)
     }
 
@@ -212,49 +212,43 @@ impl GitLab {
             .collect())
     }
 
-    /// Loads what earlier runs read, once. A missing, foreign or unreadable
-    /// file only means reading everything again.
+    fn shelf(&self, me: &str) -> String {
+        // Per source and per account: "me" is baked into what is stored.
+        format!("gitlab-history/1/{}/{me}", self.name)
+    }
+
+    /// Loads what earlier runs read, once. Anything unreadable only means
+    /// reading it again.
     fn recall(&self, me: &str) {
         self.recalled.call_once(|| {
-            let Some(path) = &self.memory else { return };
-            let Ok(text) = std::fs::read_to_string(path) else {
-                return;
-            };
-            let Ok(saved) = serde_json::from_str::<Saved>(&text) else {
-                return;
-            };
-            if saved.me == me {
-                *self.histories.lock().unwrap() = saved
-                    .histories
-                    .into_iter()
-                    .map(|(id, history)| (id, (history.at.clone(), history.into())))
-                    .collect();
-            }
+            let Some(cache) = &self.memory else { return };
+            *self.histories.lock().unwrap() = cache
+                .all(&self.shelf(me))
+                .into_iter()
+                .filter_map(|(id, entry)| {
+                    let history: SavedHistory = serde_json::from_str(&entry.value).ok()?;
+                    Some((id, (entry.version, history.into())))
+                })
+                .collect();
         });
     }
 
-    fn save(&self, me: &str) {
-        let Some(path) = &self.memory else { return };
-        if !self.unsaved.swap(false, Ordering::Relaxed) {
-            return;
+    /// Stores what this reading learned, and drops what is no longer open.
+    fn save(&self, me: &str, prune: bool) {
+        let Some(cache) = &self.memory else { return };
+        let shelf = self.shelf(me);
+        let read = std::mem::take(&mut *self.unsaved.lock().unwrap());
+        let histories = self.histories.lock().unwrap();
+        for id in read {
+            if let Some((at, history)) = histories.get(&id)
+                && let Ok(text) = serde_json::to_string(&SavedHistory::new(at, history))
+            {
+                cache.put(&shelf, &id, at, &text);
+            }
         }
-        let saved = Saved {
-            me: me.to_string(),
-            histories: self
-                .histories
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|(id, (at, history))| (id.clone(), SavedHistory::new(at, history)))
-                .collect(),
-        };
-        // Written aside then renamed, so a reader never sees half a file.
-        // Failing to save costs time on the next run, nothing else.
-        let aside = path.with_extension("tmp");
-        if let (Some(folder), Ok(text)) = (path.parent(), serde_json::to_string(&saved)) {
-            let _ = std::fs::create_dir_all(folder)
-                .and_then(|()| std::fs::write(&aside, text))
-                .and_then(|()| std::fs::rename(&aside, path));
+        if prune {
+            let open: Vec<&str> = histories.keys().map(String::as_str).collect();
+            cache.keep_only(&shelf, &open);
         }
     }
 
@@ -287,15 +281,13 @@ impl GitLab {
             .iter()
             .filter_map(|merge_request| merge_request["id"].as_str())
             .collect();
-        {
+        let pruned = {
             let mut histories = self.histories.lock().unwrap();
             let before = histories.len();
             histories.retain(|id, _| open.contains(&id.as_str()));
-            if histories.len() != before {
-                self.unsaved.store(true, Ordering::Relaxed);
-            }
-        }
-        self.save(&me);
+            histories.len() != before
+        };
+        self.save(&me, pruned);
 
         let mut items = Vec::new();
         for (merge_request, slot) in merge_requests.iter().zip(slots) {
@@ -312,14 +304,8 @@ impl GitLab {
     }
 }
 
-/// The on-disk form of the memory. Holds who spoke when and where, never
+/// The stored form of a history. Holds who spoke when and where, never
 /// what was said.
-#[derive(Serialize, Deserialize)]
-struct Saved {
-    me: String,
-    histories: HashMap<String, SavedHistory>,
-}
-
 #[derive(Serialize, Deserialize)]
 struct SavedHistory {
     at: String,
@@ -548,8 +534,11 @@ fn read_merge_request(
             reference: format!("!{}", merge_request["iid"].as_str()?),
             title: merge_request["title"].as_str()?.to_string(),
             url: merge_request["webUrl"].as_str()?.to_string(),
+            created_at: time(&merge_request["createdAt"])?,
             updated_at: time(&merge_request["updatedAt"])?,
         },
+        branch: merge_request["sourceBranch"].as_str().map(str::to_string),
+        tickets: Vec::new(),
         author: actor(&merge_request["author"], me),
         assigned_to_me: merge_request["assignees"]["nodes"]
             .as_array()
@@ -582,10 +571,12 @@ fn read_issue(issue: &Value, source: &str) -> Option<Ticket> {
             reference: format!("#{number}"),
             title: issue["title"].as_str()?.to_string(),
             url: issue["web_url"].as_str()?.to_string(),
+            created_at: time(&issue["created_at"])?,
             updated_at: time(&issue["updated_at"])?,
         },
         status: "Open".to_string(),
         category: StatusCategory::Todo,
+        priority: None,
         blocked_by: Vec::new(),
         mention_pending: false,
     })
@@ -707,7 +698,8 @@ mod tests {
         let merge_request = json!({
             "id": "gid://gitlab/MergeRequest/1", "iid": "741", "title": "Add CSV export",
             "webUrl": "https://gitlab.test/g/web/-/merge_requests/741",
-            "draft": false, "updatedAt": "2026-04-02T11:23:08Z", "conflicts": true,
+            "draft": false, "createdAt": "2026-03-27T08:49:00Z", "sourceBranch": "PROJ-120-export",
+            "updatedAt": "2026-04-02T11:23:08Z", "conflicts": true,
             "approved": false, "approvalsLeft": 2,
             "project": { "fullPath": "g/web" },
             "author": { "username": "alex", "bot": false },
@@ -736,7 +728,7 @@ mod tests {
     fn issue_reference_splits_project_and_number() {
         let issue = json!({
             "title": "Rotate keys", "web_url": "https://gitlab.test/g/web/-/issues/12",
-            "updated_at": "2026-04-02T11:23:08.123Z", "references": { "full": "g/web#12" },
+            "created_at": "2026-04-01T11:23:08.123Z", "updated_at": "2026-04-02T11:23:08.123Z", "references": { "full": "g/web#12" },
         });
         let ticket = read_issue(&issue, "gitlab").unwrap();
         assert_eq!(ticket.item.container, "g/web");

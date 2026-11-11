@@ -23,10 +23,13 @@ use unicode_width::UnicodeWidthStr;
 
 use super::wording::{self, age, column, plain};
 use crate::entities::board::Board;
+#[cfg(test)]
+use crate::entities::desk::Sort;
 use crate::entities::desk::{Desk, GroupKey, Grouping, Layout, Pane, Space};
 use crate::entities::filter::Filter;
 use crate::entities::task::{Bucket, Task};
 use crate::entities::time::Timestamp;
+use crate::entities::urgency::Heat;
 use crate::use_cases::ports::{BoardView, Clock, Pace};
 
 pub enum Update {
@@ -420,6 +423,19 @@ impl Screen {
                 self.unsaved = true;
                 self.select(0);
             }
+            KeyCode::Char('s') => {
+                let pane = self.desk.pane_mut();
+                pane.sort = pane.sort.next();
+                pane.reversed = false;
+                self.unsaved = true;
+                self.select(0);
+            }
+            KeyCode::Char('v') => {
+                let pane = self.desk.pane_mut();
+                pane.reversed = !pane.reversed;
+                self.unsaved = true;
+                self.select(0);
+            }
             KeyCode::Char('n') => {
                 self.desk.split_pane();
                 self.zoomed = false;
@@ -552,6 +568,13 @@ fn accent(bucket: Bucket) -> Color {
     }
 }
 
+fn heat_color(heat: Heat) -> Color {
+    match heat {
+        Heat::Hot => Color::Red,
+        Heat::Warm | Heat::Calm => Color::Yellow,
+    }
+}
+
 fn layout_glyph(layout: Layout) -> &'static str {
     match layout {
         Layout::Columns => "▥",
@@ -646,9 +669,13 @@ fn row(task: &Task, grouping: Grouping, width: usize, now: Timestamp) -> ListIte
     let with_label = width >= 72 && grouping != Grouping::Kind;
     let with_who = width >= 110 && grouping != Grouping::Person;
 
-    // The reference, its gap, the title's gap, "+n" and the age are always there.
-    let mut title = width.saturating_sub(reference_width + 9);
-    let mut spans = Vec::new();
+    // The heat mark, the reference, its gap, the title's gap, "+n" and the
+    // age are always there.
+    let mut title = width.saturating_sub(reference_width + 11);
+    let mut spans = vec![Span::styled(
+        format!("{} ", wording::heat(task.urgency.heat)),
+        Style::new().fg(heat_color(task.urgency.heat)),
+    )];
     if with_label {
         spans.push(Span::styled(
             format!("{} ", column(wording::headline(task), 15)),
@@ -736,10 +763,14 @@ fn draw_pane(frame: &mut Frame, screen: &mut Screen, index: usize, area: Rect, n
             Span::styled(name, Style::new().fg(side).add_modifier(Modifier::BOLD)),
             Span::styled(format!(" {total} "), DIM),
         ]));
-    if pane.grouping != Grouping::None {
-        block = block.title_top(
-            Line::from(Span::styled(format!(" by {} ", pane.grouping.name()), DIM)).right_aligned(),
-        );
+    let order = wording::sort(pane.sort, pane.reversed);
+    let arrangement = match pane.grouping {
+        Grouping::None => format!(" {order} "),
+        grouping => format!(" by {} · {order} ", grouping.name()),
+    };
+    // A narrow pane keeps its room for its name.
+    if area.width >= 56 {
+        block = block.title_top(Line::from(Span::styled(arrangement, DIM)).right_aligned());
     }
     if screen.zoomed {
         block = block.title_bottom(Line::from(Span::styled(" zoomed · z ", DIM)).right_aligned());
@@ -834,6 +865,18 @@ fn detail(task: &Task) -> Vec<Line<'static>> {
             Span::raw(wording::explain(reason)),
         ]));
     }
+    let mut score = wording::urgency(task);
+    // A ticket that brings no points is still worth naming.
+    if task.urgency.ticket == 0 && !task.tickets.is_empty() {
+        score = format!("{score} · {}", wording::tickets(task));
+    }
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("{} ", wording::heat(task.urgency.heat)),
+            Style::new().fg(heat_color(task.urgency.heat)),
+        ),
+        Span::styled(score, DIM),
+    ]));
     lines.push(Line::from(Span::styled(task.target_url().to_string(), DIM)));
     lines
 }
@@ -850,10 +893,14 @@ const KEYS: &[(&str, &str)] = &[
     ("", "THE PANE"),
     (
         "/",
-        "filter: is: source: repo: kind: top: role: by: words, -not",
+        "filter: is: source: repo: kind: top: role: by: heat: ticket: priority: words",
     ),
     ("b", "side: to do → waiting → both"),
     ("g", "group: none → repo → kind → source → person → role"),
+    (
+        "s  v",
+        "sort: urgency → rule → waiting → updated → created · reverse it",
+    ),
     ("n  x", "new pane beside this one · close it"),
     ("Shift+← →", "move it among the others"),
     ("m 1-9", "send it to another space"),
@@ -870,7 +917,7 @@ const KEYS: &[(&str, &str)] = &[
 
 fn draw_help(frame: &mut Frame) {
     let area = frame.area();
-    let width = 94.min(area.width);
+    let width = 108.min(area.width);
     let height = (KEYS.len() as u16 + 2).min(area.height);
     let popup = Rect::new(
         area.x + (area.width - width) / 2,
@@ -937,7 +984,7 @@ fn footer(screen: &Screen) -> Line<'static> {
                 Style::new().fg(Color::Red),
             )),
             None => Line::from(Span::styled(
-                " ←→ pane · ↑↓ task · 1-9 space · / filter · g group · b side · t layout · n new · z zoom · ? keys",
+                " ←→ pane · ↑↓ task · 1-9 space · / filter · g group · s sort · b side · t layout · n new · z zoom · ? keys",
                 DIM,
             )),
         },
@@ -952,7 +999,7 @@ fn draw(frame: &mut Frame, screen: &mut Screen, now: Timestamp) {
         .map(|board| board.failures.len())
         .unwrap_or(0) as u16;
     let detail_height = match screen.selected() {
-        Some(task) if screen.detail => (task.reasons.len() as u16 + 4).min(10),
+        Some(task) if screen.detail => (task.reasons.len() as u16 + 5).min(11),
         _ => 0,
     };
     let [top, body, detail_area, failure_area, bottom]: [Rect; 5] = Split::vertical([
@@ -994,7 +1041,15 @@ fn draw(frame: &mut Frame, screen: &mut Screen, now: Timestamp) {
             .iter()
             .map(|failure| {
                 Line::from(Span::styled(
-                    format!(" ✗ {}: {}", failure.source, failure.message),
+                    format!(
+                        " ✗ {}: {}{}",
+                        failure.source,
+                        failure.message,
+                        match failure.showing_from {
+                            Some(at) => format!(" · showing what was read {} ago", age(at, now)),
+                            None => String::new(),
+                        }
+                    ),
                     Style::new().fg(Color::Red),
                 ))
             })
@@ -1251,6 +1306,28 @@ mod tests {
     }
 
     #[test]
+    fn a_pane_is_sorted_and_reversed_from_the_keyboard() {
+        let mut screen = screen(&["!1", "!2"]);
+        assert_eq!(screen.desk.space().pane().sort, Sort::Urgency);
+        press(&mut screen, KeyCode::Down);
+
+        press(&mut screen, KeyCode::Char('s'));
+        assert_eq!(screen.desk.space().pane().sort, Sort::Rule);
+        assert_eq!(screen.cursor(), 0, "the order changed: back to the top");
+        assert!(screen.unsaved);
+
+        let first = screen.selected().unwrap().item.id();
+        press(&mut screen, KeyCode::Char('v'));
+        assert!(screen.desk.space().pane().reversed);
+        assert_ne!(screen.selected().unwrap().item.id(), first);
+
+        // A new order starts in its natural direction.
+        press(&mut screen, KeyCode::Char('s'));
+        let pane = screen.desk.space().pane();
+        assert_eq!((pane.sort, pane.reversed), (Sort::Waiting, false));
+    }
+
+    #[test]
     fn layouts_tile_the_whole_area() {
         let area = Rect::new(0, 1, 120, 30);
         for layout in Layout::ALL {
@@ -1279,10 +1356,15 @@ mod tests {
         assert!(lines[0].contains(" 2 Gitlab 2 "));
         assert!(lines[0].contains(" 3 Jira 0 "));
         assert!(lines[1].contains("╭ 1 To do 2 "), "{}", lines[1]);
-        assert!(lines[1].contains(" by repo "));
+        assert!(lines[1].contains(" by repo · urgency ↓ "), "{}", lines[1]);
         assert!(lines[1].contains(" 2 Waiting 1 "));
         assert!(lines[2].contains("web group ─"), "{}", lines[2]);
-        assert!(lines[3].contains("▸ ● !1"), "{}", lines[3]);
+        assert!(lines[3].contains("▸   ● !1"), "{}", lines[3]);
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("urgency 90 = rule 90"))
+        );
         // The detail of the selected task, under the panes.
         assert!(
             lines
@@ -1315,7 +1397,7 @@ mod tests {
 
         let lines = render(&mut screen, 100, 12);
         let row = lines[2].trim_end();
-        assert!(row.contains("▸ Review"), "{row:?}");
+        assert!(row.contains("▸   Review"), "{row:?}");
         // The age is the last thing before the border, not pushed off.
         assert!(row.ends_with("  3d│"), "{row:?}");
     }

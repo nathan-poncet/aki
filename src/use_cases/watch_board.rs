@@ -12,6 +12,11 @@ pub struct WatchBoard<'a> {
 
 impl WatchBoard<'_> {
     pub fn run(&self, view: &dyn BoardView) {
+        // What was known last time shows at once; the real reading follows.
+        // It is not a reference for news: it may be days old.
+        if let Some(remembered) = self.collect.recalled() {
+            view.show(remembered);
+        }
         let mut previous: Option<Board> = None;
         loop {
             view.refreshing();
@@ -74,6 +79,18 @@ mod tests {
             recorder.announced(),
             [vec!["gitlab:group/web!2".to_string()]]
         );
+    }
+
+    #[test]
+    fn the_last_known_board_shows_before_the_first_reading() {
+        let source = ScriptedSource::always("gitlab", vec![review_request("!1")])
+            .remembering(vec![review_request("!0")], 400);
+        let recorder = watch(source, 1);
+
+        assert_eq!(recorder.boards(), 2);
+        assert_eq!(recorder.shown(0), ["gitlab:group/web!0"]);
+        assert_eq!(recorder.shown(1), ["gitlab:group/web!1"]);
+        assert!(recorder.announced().is_empty(), "catching up is not news");
     }
 
     #[test]

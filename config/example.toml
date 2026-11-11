@@ -7,6 +7,11 @@ refresh_seconds = 30
 # Desktop notification when something new becomes yours while watching.
 notifications = true
 
+# `myturn list` reuses a reading younger than this instead of asking the
+# sources again (0: always ask; `--fresh` asks once). The live board always
+# asks, and shows the last reading while the first one is under way.
+cache_seconds = 60
+
 # ── Sources ────────────────────────────────────────────────────────────
 # Without any [[sources]], myturn uses gitlab.com when `glab` is installed
 # and github.com when `gh` is installed, with their own logins.
@@ -71,6 +76,26 @@ waiting_statuses = ["blocked", "on hold", "in review", "waiting"]
 # A waiting item nobody touched for this many days becomes a "nudge" to do.
 # 0 disables nudges.
 after_days = 0
+
+# ── Urgency ────────────────────────────────────────────────────────────
+# Every task gets a score, and panes put the highest first by default:
+#   (100 - the rule's priority) + waiting + ticket
+[urgency]
+# Waiting: points per full day since the ball arrived, up to a cap.
+per_day = 3
+waiting_cap = 60
+# Ticket: a change that names a ticket (PROJ-12 in its title or branch)
+# gets `linked`, plus the points of the ticket's priority when a tracker
+# can tell it. A ticket gets the points of its own priority.
+linked = 5
+highest = 50
+high = 30
+medium = 10
+low = 0
+lowest = -10
+# From these scores on, a task is marked warm (▴), then hot (▲).
+warm = 100
+hot = 130
 
 # ── Rules ──────────────────────────────────────────────────────────────
 # Every reason an item can be on the board is a rule. Each one can be

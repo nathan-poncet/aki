@@ -47,6 +47,8 @@ impl SourceConfig {
 pub struct Config {
     pub rules: Rules,
     pub refresh: Duration,
+    /// How old a reading may be for `list` to reuse it instead of asking again.
+    pub cache: Duration,
     pub notifications: bool,
     pub sources: Vec<SourceConfig>,
 }
@@ -73,12 +75,14 @@ pub enum ConfigError {
 struct File {
     refresh_seconds: Option<u64>,
     notifications: Option<bool>,
+    cache_seconds: Option<u64>,
     sources: Option<Vec<SourceFile>>,
     threads: ThreadsFile,
     drafts: DraftsFile,
     re_review: ReReviewFile,
     tickets: TicketsFile,
     nudge: NudgeFile,
+    urgency: UrgencyFile,
     rules: BTreeMap<String, RuleFile>,
 }
 
@@ -126,6 +130,21 @@ struct TicketsFile {
 #[serde(default, deny_unknown_fields)]
 struct NudgeFile {
     after_days: Option<u32>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct UrgencyFile {
+    per_day: Option<u32>,
+    waiting_cap: Option<u32>,
+    linked: Option<i32>,
+    highest: Option<i32>,
+    high: Option<i32>,
+    medium: Option<i32>,
+    low: Option<i32>,
+    lowest: Option<i32>,
+    warm: Option<u32>,
+    hot: Option<u32>,
 }
 
 #[derive(Default, Deserialize)]
@@ -223,6 +242,18 @@ impl Config {
         if let Some(days) = file.nudge.after_days {
             rules.nudge_after_days = days;
         }
+        let weights = &mut rules.urgency;
+        let urgency = &file.urgency;
+        weights.per_day = urgency.per_day.unwrap_or(weights.per_day);
+        weights.waiting_cap = urgency.waiting_cap.unwrap_or(weights.waiting_cap);
+        weights.linked = urgency.linked.unwrap_or(weights.linked);
+        weights.highest = urgency.highest.unwrap_or(weights.highest);
+        weights.high = urgency.high.unwrap_or(weights.high);
+        weights.medium = urgency.medium.unwrap_or(weights.medium);
+        weights.low = urgency.low.unwrap_or(weights.low);
+        weights.lowest = urgency.lowest.unwrap_or(weights.lowest);
+        weights.warm = urgency.warm.unwrap_or(weights.warm);
+        weights.hot = urgency.hot.unwrap_or(weights.hot);
         for (name, rule) in &file.rules {
             let Some(kind) = Kind::from_name(name) else {
                 return unknown("rules", "rule", name, &Kind::ALL.map(Kind::name));
@@ -262,6 +293,7 @@ impl Config {
         Ok(Self {
             rules,
             refresh: Duration::from_secs(file.refresh_seconds.unwrap_or(30).max(5)),
+            cache: Duration::from_secs(file.cache_seconds.unwrap_or(60)),
             notifications: file.notifications.unwrap_or(true),
             sources,
         })
@@ -378,6 +410,11 @@ pub fn cache_dir() -> PathBuf {
         .join("myturn")
 }
 
+/// The SQLite file of everything already read.
+pub fn cache_path() -> PathBuf {
+    cache_dir().join("cache.db")
+}
+
 /// What `myturn config init` writes: every setting, at its default.
 pub const TEMPLATE: &str = include_str!("../../config/example.toml");
 
@@ -394,6 +431,7 @@ mod tests {
         let config = parse("").unwrap();
         assert_eq!(config.rules, Rules::default());
         assert_eq!(config.refresh, Duration::from_secs(30));
+        assert_eq!(config.cache, Duration::from_secs(60));
         assert!(config.notifications);
         assert_eq!(config.sources.len(), 1);
         assert!(
@@ -432,6 +470,11 @@ mod tests {
             [nudge]
             after_days = 5
 
+            [urgency]
+            per_day = 5
+            highest = 80
+            hot = 150
+
             [rules.draft_to_finish]
             enabled = false
 
@@ -455,6 +498,8 @@ mod tests {
         assert!(rules.re_review_after_approval);
         assert!(rules.is_waiting_status("qa"));
         assert_eq!(rules.nudge_after_days, 5);
+        assert_eq!((rules.urgency.per_day, rules.urgency.highest), (5, 80));
+        assert_eq!((rules.urgency.hot, rules.urgency.warm), (150, 100));
         assert!(!rules.rule(Kind::DraftToFinish).enabled);
         let checks = rules.rule(Kind::ChecksFailed);
         assert_eq!((checks.bucket, checks.priority), (Bucket::Waiting, 5));

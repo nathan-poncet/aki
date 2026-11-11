@@ -3,8 +3,9 @@
 use crate::entities::task::{Bucket, Detail, Kind, Reason, Task, Trigger};
 use unicode_width::UnicodeWidthStr;
 
-use crate::entities::desk::{GroupKey, Pane};
+use crate::entities::desk::{GroupKey, Pane, Sort};
 use crate::entities::time::Timestamp;
+use crate::entities::urgency::Heat;
 
 pub fn label(kind: Kind) -> &'static str {
     match kind {
@@ -154,6 +155,50 @@ pub fn explain(reason: &Reason) -> String {
     }
 }
 
+/// How a pane is ordered, with the direction: the natural one points down.
+pub fn sort(sort: Sort, reversed: bool) -> String {
+    format!("{} {}", sort.name(), if reversed { "↑" } else { "↓" })
+}
+
+/// The mark of a task that should not wait any longer.
+pub fn heat(heat: Heat) -> &'static str {
+    match heat {
+        Heat::Hot => "▲",
+        Heat::Warm => "▴",
+        Heat::Calm => " ",
+    }
+}
+
+/// The tickets a task is about, with what is known of them: `PROJ-7 (high)`.
+pub fn tickets(task: &Task) -> String {
+    task.tickets
+        .iter()
+        .map(|ticket| match ticket.priority {
+            Some(priority) => format!("{} ({})", ticket.key, priority.name()),
+            None => ticket.key.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The score, and what it is made of.
+pub fn urgency(task: &Task) -> String {
+    let urgency = &task.urgency;
+    let mut parts = vec![format!("rule {}", urgency.rule)];
+    if urgency.waiting > 0 {
+        parts.push(format!("waiting +{}", urgency.waiting));
+    }
+    if urgency.ticket != 0 {
+        let what = match (task.priority_level, task.tickets.is_empty()) {
+            (Some(priority), _) => format!("priority {}", priority.name()),
+            (None, false) => tickets(task),
+            (None, true) => "ticket".to_string(),
+        };
+        parts.push(format!("{what} {:+}", urgency.ticket));
+    }
+    format!("urgency {} = {}", urgency.score(), parts.join(", "))
+}
+
 /// A group's heading.
 pub fn group(key: &GroupKey) -> String {
     match key {
@@ -253,11 +298,8 @@ mod tests {
 
     fn reason(kind: Kind, detail: Detail) -> Reason {
         Reason {
-            kind,
-            bucket: Bucket::Todo,
-            priority: 0,
             detail,
-            url: None,
+            ..crate::entities::task::samples::reason(kind)
         }
     }
 
@@ -288,6 +330,28 @@ mod tests {
             )),
             "2 approvals missing · not reviewed yet: till"
         );
+    }
+
+    #[test]
+    fn the_score_is_explained() {
+        use crate::entities::task::samples;
+        use crate::entities::ticket::{LinkedTicket, Priority};
+
+        let mut task = samples::task("gitlab", "g/web", "!7", Kind::ReviewRequested, Some("alex"));
+        assert_eq!(urgency(&task), "urgency 90 = rule 90");
+
+        task.urgency.waiting = 12;
+        task.urgency.ticket = 35;
+        task.tickets = vec![LinkedTicket {
+            key: "PROJ-7".into(),
+            priority: Some(Priority::High),
+        }];
+        assert_eq!(
+            urgency(&task),
+            "urgency 137 = rule 90, waiting +12, PROJ-7 (high) +35"
+        );
+        assert_eq!(sort(Sort::Urgency, false), "urgency ↓");
+        assert_eq!(sort(Sort::Created, true), "created ↑");
     }
 
     #[test]

@@ -51,6 +51,7 @@ pub struct ItemRef {
     pub reference: String,
     pub title: String,
     pub url: String,
+    pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
 

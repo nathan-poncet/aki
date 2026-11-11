@@ -1,5 +1,6 @@
 //! The command line: argv in, a typed command out.
 
+use crate::entities::desk::Sort;
 use crate::entities::task::Bucket;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -14,10 +15,16 @@ pub enum Command {
         space: Option<String>,
         /// A filter query, as in the board.
         filter: Option<String>,
+        sort: Sort,
+        reversed: bool,
+        /// Ask the sources even if a recent reading is at hand.
+        fresh: bool,
     },
     Doctor,
     Rules,
     Spaces,
+    CachePath,
+    CacheClear,
     ConfigPath,
     ConfigInit,
     Help,
@@ -38,9 +45,14 @@ USAGE
       --todo | --waiting   only one side
       --space NAME         only what belongs to one of your spaces
       --filter QUERY       is: source: repo: kind: top: role: by: words, -negated
+      --sort ORDER         urgency (default), rule, waiting, updated, created
+      --reverse            the opposite order
+      --fresh              ask the sources even if a recent reading is cached
       --json               machine-readable
       --count              one line: \"3 to do · 5 waiting\"
   myturn spaces          where your spaces are kept, and what they are
+  myturn cache path      where what was read is kept (SQLite)
+  myturn cache clear     forget it all
   myturn doctor          check the connection to every source
   myturn rules           print every rule as configured
   myturn config path     where the configuration file is
@@ -61,6 +73,9 @@ pub fn parse(arguments: &[String], interactive: bool) -> Result<Command, String>
                 only: None,
                 space: None,
                 filter: None,
+                sort: Sort::Urgency,
+                reversed: false,
+                fresh: false,
             }
         });
     };
@@ -82,9 +97,15 @@ pub fn parse(arguments: &[String], interactive: bool) -> Result<Command, String>
             ["init"] => Ok(Command::ConfigInit),
             _ => Err("usage: myturn config path | init".to_string()),
         },
+        "cache" => match rest.as_slice() {
+            ["path"] => Ok(Command::CachePath),
+            ["clear"] => Ok(Command::CacheClear),
+            _ => Err("usage: myturn cache path | clear".to_string()),
+        },
         "list" => {
             let (mut json, mut count, mut only) = (false, false, None);
             let (mut space, mut filter) = (None, None);
+            let (mut sort, mut reversed, mut fresh) = (Sort::Urgency, false, false);
             let mut flags = rest.into_iter();
             while let Some(flag) = flags.next() {
                 let mut value = || {
@@ -100,6 +121,17 @@ pub fn parse(arguments: &[String], interactive: bool) -> Result<Command, String>
                     "--waiting" => only = Some(Bucket::Waiting),
                     "--space" => space = Some(value()?),
                     "--filter" => filter = Some(value()?),
+                    "--sort" => {
+                        let name = value()?;
+                        sort = Sort::from_name(&name).ok_or_else(|| {
+                            format!(
+                                "unknown order \"{name}\" (expected: {})",
+                                Sort::ALL.map(Sort::name).join(", ")
+                            )
+                        })?;
+                    }
+                    "--reverse" => reversed = true,
+                    "--fresh" => fresh = true,
                     other => return Err(format!("unknown option \"{other}\" for list")),
                 }
             }
@@ -109,6 +141,9 @@ pub fn parse(arguments: &[String], interactive: bool) -> Result<Command, String>
                 only,
                 space,
                 filter,
+                sort,
+                reversed,
+                fresh,
             })
         }
         other => Err(format!("unknown command \"{other}\"")),
@@ -140,6 +175,9 @@ mod tests {
                 only: Some(Bucket::Waiting),
                 space: None,
                 filter: None,
+                sort: Sort::Urgency,
+                reversed: false,
+                fresh: false,
             })
         );
         assert!(parse_words(&["list", "--yaml"], true).is_err());
@@ -149,6 +187,20 @@ mod tests {
                 if space == "Pro" && filter == "repo:web -kind:draft"
         ));
         assert!(parse_words(&["list", "--space"], true).is_err());
+        assert!(matches!(
+            parse_words(&["list", "--sort", "waiting", "--reverse", "--fresh"], true),
+            Ok(Command::List {
+                sort: Sort::Waiting,
+                reversed: true,
+                fresh: true,
+                ..
+            })
+        ));
+        assert!(parse_words(&["list", "--sort", "luck"], true).is_err());
+        assert_eq!(
+            parse_words(&["cache", "clear"], true),
+            Ok(Command::CacheClear)
+        );
     }
 
     #[test]

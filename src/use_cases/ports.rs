@@ -5,6 +5,7 @@ use crate::entities::board::Board;
 use crate::entities::desk::Desk;
 use crate::entities::item::WorkItem;
 use crate::entities::task::Task;
+use crate::entities::ticket::Ticket;
 use crate::entities::time::Timestamp;
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -45,6 +46,24 @@ pub trait WorkSource: Send + Sync {
 
     /// Every open item I am involved in, as it stands right now.
     fn fetch(&self) -> Result<Vec<WorkItem>, SourceError>;
+
+    /// The tickets with these keys that this source knows, whoever they
+    /// belong to. Only trackers answer; keys they do not know are left out.
+    fn tickets(&self, _keys: &[String]) -> Result<Vec<Ticket>, SourceError> {
+        Ok(Vec::new())
+    }
+
+    /// What the last successful `fetch` returned, and when, if this source
+    /// remembers: something to show before, or instead of, a fresh answer.
+    fn recall(&self) -> Option<Recalled> {
+        None
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recalled {
+    pub items: Vec<WorkItem>,
+    pub at: Timestamp,
 }
 
 pub trait Clock: Send + Sync {

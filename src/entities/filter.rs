@@ -5,17 +5,23 @@
 //! ```
 //!
 //! Keys: `is` (todo, waiting), `source`, `repo`, `kind` (any reason the task
-//! is listed for), `top` (its most pressing reason), `role`, `by`.
+//! is listed for), `top` (its most pressing reason), `role`, `by`, `heat`
+//! (hot, warm, calm), `ticket` (part of a linked ticket's key, or `any`),
+//! `priority` (of the ticket, or of the tickets a change is about).
 //!
 //! Terms are separated by spaces and must all hold. `key:a,b` holds when
 //! any value does; a leading `-` negates the term; a bare word is searched
 //! in the reference, the title, the repository and the counterpart.
 
 use super::task::{Bucket, Kind, Role, Task};
+use super::ticket::Priority;
+use super::urgency::Heat;
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum FilterError {
-    #[error("unknown filter \"{0}:\" (use is, source, repo, kind, top, role, by)")]
+    #[error(
+        "unknown filter \"{0}:\" (use is, source, repo, kind, top, role, by, heat, ticket, priority)"
+    )]
     UnknownKey(String),
     #[error("\"{key}:\" needs a value")]
     MissingValue { key: String },
@@ -36,6 +42,10 @@ enum Test {
     Top(Vec<Kind>),
     Role(Vec<Role>),
     By(Vec<String>),
+    Heat(Vec<Heat>),
+    /// Parts of ticket keys; `any` is any ticket at all.
+    Ticket(Vec<String>),
+    Priority(Vec<Priority>),
     Text(String),
 }
 
@@ -151,6 +161,35 @@ impl Filter {
                     Test::Kind(kinds)
                 })
             }
+            "heat" => values
+                .iter()
+                .map(|value| {
+                    [Heat::Hot, Heat::Warm, Heat::Calm]
+                        .into_iter()
+                        .find(|heat| heat.name() == value)
+                        .ok_or_else(|| FilterError::UnknownValue {
+                            key: "heat",
+                            value: value.clone(),
+                            expected: "hot, warm, calm".to_string(),
+                        })
+                })
+                .collect::<Result<_, _>>()
+                .map(Test::Heat),
+            "priority" => values
+                .iter()
+                .map(|value| {
+                    Priority::ALL
+                        .into_iter()
+                        .find(|priority| priority.name() == value)
+                        .ok_or_else(|| FilterError::UnknownValue {
+                            key: "priority",
+                            value: value.clone(),
+                            expected: "highest, high, medium, low, lowest".to_string(),
+                        })
+                })
+                .collect::<Result<_, _>>()
+                .map(Test::Priority),
+            "ticket" => Ok(Test::Ticket(values)),
             "source" => Ok(Test::Source(values)),
             "repo" => Ok(Test::Repo(values)),
             "by" => Ok(Test::By(values)),
@@ -177,6 +216,23 @@ impl Filter {
                 Test::Repo(parts) => parts
                     .iter()
                     .any(|part| contains(&task.item.container, part)),
+                Test::Heat(heats) => heats.contains(&task.urgency.heat),
+                Test::Ticket(parts) => parts.iter().any(|part| {
+                    (part == "any" && !task.tickets.is_empty())
+                        || task
+                            .tickets
+                            .iter()
+                            .any(|ticket| contains(&ticket.key, part))
+                }),
+                Test::Priority(priorities) => {
+                    task.priority_level
+                        .is_some_and(|priority| priorities.contains(&priority))
+                        || task
+                            .tickets
+                            .iter()
+                            .filter_map(|ticket| ticket.priority)
+                            .any(|priority| priorities.contains(&priority))
+                }
                 Test::Top(kinds) => kinds.contains(&task.headline().kind),
                 Test::Kind(kinds) => task
                     .reasons
@@ -244,35 +300,10 @@ impl Filter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::item::ItemRef;
-    use crate::entities::task::{Detail, Reason};
-    use crate::entities::time::Timestamp;
+    use crate::entities::task::samples;
 
     fn task(source: &str, container: &str, kind: Kind, by: Option<&str>) -> Task {
-        Task {
-            item: ItemRef {
-                source: source.into(),
-                container: container.into(),
-                reference: "!7".into(),
-                title: "Add CSV export".into(),
-                url: "https://example.test/7".into(),
-                updated_at: Timestamp(0),
-            },
-            role: if by.is_some() {
-                Role::Reviewer
-            } else {
-                Role::Author
-            },
-            counterpart: by.map(str::to_string),
-            reasons: vec![Reason {
-                kind,
-                bucket: kind.default_bucket(),
-                priority: kind.default_priority(),
-                detail: Detail::None,
-                url: None,
-            }],
-            since: Timestamp(0),
-        }
+        samples::task(source, container, "!7", kind, by)
     }
 
     fn keeps(query: &str, task: &Task) -> bool {
@@ -308,20 +339,43 @@ mod tests {
     #[test]
     fn top_looks_only_at_the_most_pressing_reason() {
         let mut draft = task("gitlab", "group/web", Kind::ReplyNeeded, None);
-        let finish = Kind::DraftToFinish;
-        draft.reasons.push(Reason {
-            kind: finish,
-            bucket: finish.default_bucket(),
-            priority: finish.default_priority(),
-            detail: Detail::None,
-            url: None,
-        });
+        draft.reasons.push(samples::reason(Kind::DraftToFinish));
         assert!(keeps("kind:draft", &draft));
         assert!(
             !keeps("top:draft", &draft),
             "a reply comes before the draft"
         );
         assert!(keeps("top:reply", &draft));
+    }
+
+    #[test]
+    fn urgency_and_tickets_can_be_filtered_on() {
+        use crate::entities::ticket::LinkedTicket;
+
+        let mut review = task("gitlab", "group/web", Kind::ReviewRequested, Some("alex"));
+        assert!(keeps("heat:calm", &review));
+        assert!(!keeps("ticket:any", &review));
+        assert!(!keeps("priority:high", &review));
+
+        review.urgency.heat = Heat::Hot;
+        review.tickets = vec![LinkedTicket {
+            key: "PROJ-12".into(),
+            priority: Some(Priority::High),
+        }];
+        assert!(keeps("heat:hot,warm", &review));
+        assert!(keeps("ticket:any", &review));
+        assert!(keeps("ticket:proj", &review));
+        assert!(!keeps("ticket:other", &review));
+        assert!(keeps("priority:high,highest", &review));
+
+        // A ticket's own priority counts too.
+        let mut ticket = task("jira", "PROJ", Kind::TicketTodo, None);
+        ticket.priority_level = Some(Priority::Lowest);
+        assert!(keeps("priority:lowest", &ticket));
+        assert!(matches!(
+            Filter::parse("heat:tepid"),
+            Err(FilterError::UnknownValue { key: "heat", .. })
+        ));
     }
 
     #[test]

@@ -11,6 +11,7 @@ pub mod task;
 pub mod ticket;
 pub mod time;
 pub mod triage;
+pub mod urgency;
 
 #[cfg(test)]
 mod triage_tests;

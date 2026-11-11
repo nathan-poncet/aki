@@ -3,12 +3,12 @@
 use std::cell::Cell;
 use std::sync::Mutex;
 
-use super::ports::{BoardView, Clock, Notifier, Pace, Pacer, SourceError, WorkSource};
+use super::ports::{BoardView, Clock, Notifier, Pace, Pacer, Recalled, SourceError, WorkSource};
 use crate::entities::board::Board;
 use crate::entities::change_request::{ChangeRequest, Checks, ReviewState, Reviewer};
 use crate::entities::item::{Actor, ItemRef, WorkItem};
 use crate::entities::task::Task;
-use crate::entities::ticket::{StatusCategory, Ticket};
+use crate::entities::ticket::{Priority, StatusCategory, Ticket};
 use crate::entities::time::Timestamp;
 
 pub struct FixedClock(pub i64);
@@ -25,6 +25,10 @@ type Answer = Result<Vec<WorkItem>, SourceError>;
 pub struct ScriptedSource {
     name: String,
     script: Mutex<Vec<Answer>>,
+    /// What `recall` gives.
+    remembered: Option<Recalled>,
+    /// The tickets `tickets` can be asked about.
+    known: Vec<Ticket>,
 }
 
 impl ScriptedSource {
@@ -33,7 +37,28 @@ impl ScriptedSource {
         Self {
             name: name.to_string(),
             script: Mutex::new(answers),
+            remembered: None,
+            known: Vec::new(),
         }
+    }
+
+    pub fn remembering(mut self, items: Vec<WorkItem>, at: i64) -> Self {
+        self.remembered = Some(Recalled {
+            items,
+            at: Timestamp(at),
+        });
+        self
+    }
+
+    pub fn knowing(mut self, tickets: Vec<WorkItem>) -> Self {
+        self.known = tickets
+            .into_iter()
+            .filter_map(|item| match item {
+                WorkItem::Ticket(ticket) => Some(ticket),
+                WorkItem::Change(_) => None,
+            })
+            .collect();
+        self
     }
 
     pub fn always(name: &str, items: Vec<WorkItem>) -> Self {
@@ -61,6 +86,19 @@ impl WorkSource for ScriptedSource {
         } else {
             script.last().cloned().unwrap_or(Ok(Vec::new()))
         }
+    }
+
+    fn tickets(&self, keys: &[String]) -> Result<Vec<Ticket>, SourceError> {
+        Ok(self
+            .known
+            .iter()
+            .filter(|ticket| keys.contains(&ticket.item.reference))
+            .cloned()
+            .collect())
+    }
+
+    fn recall(&self) -> Option<Recalled> {
+        self.remembered.clone()
     }
 }
 
@@ -93,6 +131,15 @@ impl Recorder {
         self.boards.lock().unwrap().len()
     }
 
+    /// The items to do on the nth board shown.
+    pub fn shown(&self, nth: usize) -> Vec<String> {
+        self.boards.lock().unwrap()[nth]
+            .todo
+            .iter()
+            .map(|task| task.item.id())
+            .collect()
+    }
+
     pub fn announced(&self) -> Vec<Vec<String>> {
         self.announced.lock().unwrap().clone()
     }
@@ -120,6 +167,7 @@ fn item(source: &str, container: &str, reference: &str) -> ItemRef {
         reference: reference.to_string(),
         title: format!("Title of {reference}"),
         url: format!("https://example.test/{reference}"),
+        created_at: Timestamp(100),
         updated_at: Timestamp(500),
     }
 }
@@ -128,6 +176,8 @@ fn item(source: &str, container: &str, reference: &str) -> ItemRef {
 pub fn review_request(reference: &str) -> WorkItem {
     WorkItem::Change(ChangeRequest {
         item: item("gitlab", "group/web", reference),
+        branch: None,
+        tickets: Vec::new(),
         author: Actor::other("alex"),
         assigned_to_me: false,
         reviewers: vec![Reviewer {
@@ -152,7 +202,25 @@ pub fn ticket(reference: &str, status: &str) -> WorkItem {
         item: item("jira", "X", reference),
         status: status.to_string(),
         category: StatusCategory::InProgress,
+        priority: None,
         blocked_by: Vec::new(),
         mention_pending: false,
     })
+}
+
+pub fn review_request_titled(reference: &str, title: &str) -> WorkItem {
+    let mut item = review_request(reference);
+    if let WorkItem::Change(change) = &mut item {
+        change.item.title = title.to_string();
+    }
+    item
+}
+
+/// A ticket of mine, in progress, named by its key.
+pub fn ticket_with_priority(key: &str, priority: Priority) -> WorkItem {
+    let mut item = ticket(key, "In Progress");
+    if let WorkItem::Ticket(ticket) = &mut item {
+        ticket.priority = Some(priority);
+    }
+    item
 }

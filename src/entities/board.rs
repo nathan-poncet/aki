@@ -10,6 +10,8 @@ use super::time::Timestamp;
 pub struct Failure {
     pub source: String,
     pub message: String,
+    /// When set, the board still shows this source as it was then.
+    pub showing_from: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

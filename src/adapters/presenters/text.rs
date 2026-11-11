@@ -4,9 +4,11 @@ use std::fmt::Write;
 
 use super::wording::{self, age, column, plain};
 use crate::entities::board::Board;
+use crate::entities::desk::Sort;
 use crate::entities::rules::Rules;
 use crate::entities::task::{Bucket, Kind, Task};
 use crate::entities::time::Timestamp;
+use crate::entities::urgency::Heat;
 
 pub struct Style {
     pub color: bool,
@@ -26,7 +28,7 @@ impl Style {
 const LABEL: usize = 16;
 const REFERENCE: usize = 18;
 
-fn section(out: &mut String, title: &str, tasks: &[Task], now: Timestamp, style: &Style) {
+fn section(out: &mut String, title: &str, tasks: &[&Task], now: Timestamp, style: &Style) {
     let heading = format!("{title} ({})", tasks.len());
     let _ = writeln!(out, "{}", style.paint("1", &heading));
     if tasks.is_empty() {
@@ -43,9 +45,14 @@ fn section(out: &mut String, title: &str, tasks: &[Task], now: Timestamp, style:
             .as_deref()
             .map(|name| format!("@{name}"))
             .unwrap_or_default();
+        let heat = match task.urgency.heat {
+            Heat::Hot => style.paint("31", wording::heat(Heat::Hot)),
+            Heat::Warm => style.paint("33", wording::heat(Heat::Warm)),
+            Heat::Calm => " ".to_string(),
+        };
         let _ = writeln!(
             out,
-            "  {} {} {} {} {:>4}",
+            "{heat} {} {} {} {} {:>4}",
             style.paint(color, &column(wording::headline(task), LABEL)),
             style.paint("1", &column(&task.item.short(), REFERENCE)),
             column(&plain(&task.item.title), title_width),
@@ -53,20 +60,44 @@ fn section(out: &mut String, title: &str, tasks: &[Task], now: Timestamp, style:
             age(task.since, now),
         );
         let indent = " ".repeat(LABEL + 3);
-        let _ = writeln!(out, "{indent}{}", style.paint("2", &wording::summary(task)));
+        let mut why = wording::summary(task);
+        if !task.tickets.is_empty() {
+            let _ = write!(why, " · {}", wording::tickets(task));
+        }
+        let _ = writeln!(out, "{indent}{}", style.paint("2", &why));
     }
 }
 
-pub fn board(board: &Board, only: Option<Bucket>, now: Timestamp, style: &Style) -> String {
+/// How the list is ordered.
+pub struct Order {
+    pub sort: Sort,
+    pub reversed: bool,
+}
+
+impl Order {
+    fn of<'a>(&self, tasks: &'a [Task]) -> Vec<&'a Task> {
+        let mut tasks: Vec<&Task> = tasks.iter().collect();
+        self.sort.apply(&mut tasks, self.reversed);
+        tasks
+    }
+}
+
+pub fn board(
+    board: &Board,
+    only: Option<Bucket>,
+    order: &Order,
+    now: Timestamp,
+    style: &Style,
+) -> String {
     let mut out = String::new();
     if only != Some(Bucket::Waiting) {
-        section(&mut out, "TO DO", &board.todo, now, style);
+        section(&mut out, "TO DO", &order.of(&board.todo), now, style);
     }
     if only.is_none() {
         out.push('\n');
     }
     if only != Some(Bucket::Todo) {
-        section(&mut out, "WAITING", &board.waiting, now, style);
+        section(&mut out, "WAITING", &order.of(&board.waiting), now, style);
     }
     out
 }
@@ -84,11 +115,17 @@ pub fn count(board: &Board) -> String {
     line
 }
 
-pub fn failures(board: &Board) -> String {
+pub fn failures(board: &Board, now: Timestamp) -> String {
     board
         .failures
         .iter()
-        .map(|failure| format!("myturn: {}: {}\n", failure.source, failure.message))
+        .map(|failure| {
+            let shown = match failure.showing_from {
+                Some(at) => format!(" (showing what was read {} ago)", age(at, now)),
+                None => String::new(),
+            };
+            format!("myturn: {}: {}{shown}\n", failure.source, failure.message)
+        })
         .collect()
 }
 
@@ -139,5 +176,24 @@ pub fn rules(rules: &Rules) -> String {
         rules.ticket_waiting_statuses.join(", ")
     );
     let _ = writeln!(out, "nudge.after_days          {}", rules.nudge_after_days);
+    let urgency = &rules.urgency;
+    let _ = writeln!(
+        out,
+        "\nurgency = (100 - rule priority) + waiting + ticket\n\
+         urgency.per_day           {} per day waiting, up to {}\n\
+         urgency.linked            {:+} for naming a ticket\n\
+         urgency ticket priority   highest {:+}, high {:+}, medium {:+}, low {:+}, lowest {:+}\n\
+         urgency.warm / hot        from {} / from {}",
+        urgency.per_day,
+        urgency.waiting_cap,
+        urgency.linked,
+        urgency.highest,
+        urgency.high,
+        urgency.medium,
+        urgency.low,
+        urgency.lowest,
+        urgency.warm,
+        urgency.hot,
+    );
     out
 }

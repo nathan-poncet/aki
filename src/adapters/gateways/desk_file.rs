@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::entities::desk::{Desk, Grouping, Layout, SpaceDraft};
+use crate::entities::desk::{Desk, Grouping, Layout, PaneDraft, Sort, SpaceDraft};
 use crate::entities::filter::Filter;
 use crate::use_cases::ports::{DeskError, DeskStore};
 
@@ -15,10 +15,12 @@ const HEADER: &str = "\
 # reads it at start; edit it by hand if you like.
 #
 #   scope / filter   is:todo|waiting  source:  repo:  kind:  top:  role:  by:  words
+#                    heat:hot|warm|calm  ticket:KEY|any  priority:high
 #                    values: a,b (any)   negation: -repo:api
 #                    kind: any reason of the task   top: its most pressing one
 #   layout           columns | rows | master | grid
 #   group            none | repo | kind | source | person | role
+#   sort             urgency | rule | waiting | updated | created   (reverse = true flips it)
 ";
 
 #[derive(Default, Serialize, Deserialize)]
@@ -49,10 +51,18 @@ struct PaneFile {
     filter: String,
     #[serde(default = "none")]
     group: String,
+    #[serde(default = "urgency")]
+    sort: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    reverse: bool,
 }
 
 fn columns() -> String {
     Layout::Columns.name().to_string()
+}
+
+fn urgency() -> String {
+    Sort::Urgency.name().to_string()
 }
 
 fn none() -> String {
@@ -75,7 +85,20 @@ pub fn parse(text: &str) -> Result<Desk, String> {
                     Grouping::ALL.map(Grouping::name).join(", ")
                 )
             })?;
-            panes.push((pane.title.clone(), filter(&pane.filter)?, grouping));
+            let sort = Sort::from_name(&pane.sort).ok_or_else(|| {
+                format!(
+                    "{place}: unknown sort \"{}\" (expected: {})",
+                    pane.sort,
+                    Sort::ALL.map(Sort::name).join(", ")
+                )
+            })?;
+            panes.push(PaneDraft {
+                title: pane.title.clone(),
+                filter: filter(&pane.filter)?,
+                grouping,
+                sort,
+                reversed: pane.reverse,
+            });
         }
         drafts.push(SpaceDraft {
             scope: filter(&space.scope)?,
@@ -109,6 +132,8 @@ pub fn render(desk: &Desk) -> String {
                         title: pane.title.clone(),
                         filter: pane.filter.query().to_string(),
                         group: pane.grouping.name().to_string(),
+                        sort: pane.sort.name().to_string(),
+                        reverse: pane.reversed,
                     })
                     .collect(),
             })
@@ -162,6 +187,8 @@ mod tests {
         pane.title = "Reviews".to_string();
         pane.filter = Filter::parse("is:todo kind:review -repo:api").unwrap();
         pane.grouping = Grouping::Repo;
+        pane.sort = Sort::Waiting;
+        pane.reversed = true;
 
         let text = render(&desk);
         assert!(text.starts_with("# Your spaces."));
@@ -204,6 +231,7 @@ mod tests {
         let perso = &desk.spaces()[1];
         assert_eq!(perso.panes.len(), 1);
         assert_eq!(perso.panes[0].grouping, Grouping::Repo);
+        assert_eq!(perso.panes[0].sort, Sort::Urgency);
     }
 
     #[test]
@@ -215,6 +243,9 @@ mod tests {
         );
         let error = parse("[[spaces]]\nname = \"Pro\"\nlayout = \"spiral\"").unwrap_err();
         assert!(error.contains("unknown layout \"spiral\""), "{error}");
+        let error =
+            parse("[[spaces]]\nname = \"Pro\"\n[[spaces.panes]]\nsort = \"random\"").unwrap_err();
+        assert!(error.contains("unknown sort \"random\""), "{error}");
         assert!(parse("[[spaces]]\nname = \"Pro\"\ncolour = 1").is_err());
     }
 }

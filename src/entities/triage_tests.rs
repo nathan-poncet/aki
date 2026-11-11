@@ -16,6 +16,7 @@ fn item() -> ItemRef {
         reference: "!7".into(),
         title: "Add CSV export".into(),
         url: "https://example.test/mr/7".into(),
+        created_at: Timestamp(50 * DAY),
         updated_at: Timestamp(99 * DAY),
     }
 }
@@ -23,6 +24,8 @@ fn item() -> ItemRef {
 fn change(author: Actor) -> ChangeRequest {
     ChangeRequest {
         item: item(),
+        branch: None,
+        tickets: Vec::new(),
         author,
         assigned_to_me: false,
         reviewers: Vec::new(),
@@ -479,6 +482,7 @@ fn ticket(status: &str, category: StatusCategory) -> Ticket {
         },
         status: status.into(),
         category,
+        priority: None,
         blocked_by: Vec::new(),
         mention_pending: false,
     }
@@ -521,4 +525,88 @@ fn a_mention_on_a_blocked_ticket_is_still_mine() {
         kinds(&Some(task)),
         [Kind::TicketMentioned, Kind::TicketBlocked]
     );
+}
+
+// ── since when, and how urgent ─────────────────────────────────────────
+
+#[test]
+fn a_review_waits_since_it_was_asked_for() {
+    let mut change = theirs(ReviewState::Pending);
+    change.review_requested_at = Some(Timestamp(80 * DAY));
+    let task = run(change, &Rules::default()).unwrap();
+    assert_eq!(task.since, Timestamp(80 * DAY));
+    // 20 days at 3 points, capped at 60, on top of the rule's 90.
+    assert_eq!((task.urgency.rule, task.urgency.waiting), (90, 60));
+
+    // Nobody recorded the request: since the change exists.
+    let task = run(theirs(ReviewState::Pending), &Rules::default()).unwrap();
+    assert_eq!(task.since, Timestamp(50 * DAY));
+}
+
+#[test]
+fn a_re_review_waits_since_the_first_thing_that_made_it_due() {
+    let mut change = theirs(ReviewState::Commented);
+    change.threads = vec![thread(vec![note(me(), 10), note(alex(), 97 * DAY)])];
+    change.last_push_at = Some(Timestamp(98 * DAY));
+    let task = run(change, &Rules::default()).unwrap();
+    assert_eq!(task.headline().kind, Kind::ReReview);
+    assert_eq!(task.since, Timestamp(97 * DAY));
+    assert_eq!(task.urgency.waiting, 9);
+}
+
+#[test]
+fn a_reply_waits_since_the_oldest_unanswered_word() {
+    let mut change = mine();
+    change.threads = vec![
+        thread(vec![note(Actor::other("till"), 96 * DAY)]),
+        thread(vec![note(Actor::other("till"), 90 * DAY)]),
+    ];
+    let task = run(change, &Rules::default()).unwrap();
+    assert_eq!(task.headline().kind, Kind::ReplyNeeded);
+    assert_eq!(task.since, Timestamp(90 * DAY));
+}
+
+#[test]
+fn after_my_review_the_author_is_waited_on_since_my_last_word() {
+    let mut change = theirs(ReviewState::Commented);
+    change.threads = vec![thread(vec![note(me(), 95 * DAY)])];
+    let task = run(change, &Rules::default()).unwrap();
+    assert_eq!(task.since, Timestamp(95 * DAY));
+}
+
+#[test]
+fn a_linked_ticket_and_its_priority_raise_a_change() {
+    use super::ticket::{LinkedTicket, Priority};
+    use super::urgency::Heat;
+
+    let mut change = theirs(ReviewState::Pending);
+    change.review_requested_at = Some(Timestamp(100 * DAY));
+    let plain = run(change.clone(), &Rules::default()).unwrap();
+    assert_eq!(
+        (plain.urgency.score(), plain.urgency.heat),
+        (90, Heat::Calm)
+    );
+
+    change.tickets = vec![LinkedTicket {
+        key: "PROJ-7".into(),
+        priority: Some(Priority::Highest),
+    }];
+    let urgent = run(change, &Rules::default()).unwrap();
+    assert_eq!(
+        (urgent.urgency.score(), urgent.urgency.heat),
+        (145, Heat::Hot)
+    );
+    assert_eq!(urgent.tickets[0].key, "PROJ-7");
+}
+
+#[test]
+fn a_ticket_weighs_its_own_priority() {
+    use super::ticket::Priority;
+
+    let mut high = ticket("To Do", StatusCategory::Todo);
+    high.priority = Some(Priority::High);
+    let task = run_ticket(high).unwrap();
+    assert_eq!(task.priority_level, Some(Priority::High));
+    // The rule's 20, a day of waiting, the priority's 30.
+    assert_eq!(task.urgency.score(), 20 + 3 + 30);
 }
