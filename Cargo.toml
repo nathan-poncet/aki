@@ -1,0 +1,25 @@
+[package]
+name = "myturn"
+version = "0.1.0"
+edition = "2024"
+description = "Whose turn is it? One live list of what waits on you, and what waits on others, across GitLab, GitHub and Jira"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/nathan-poncet/myturn"
+readme = "README.md"
+keywords = ["gitlab", "github", "jira", "tui", "code-review"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1.1"
+ureq = { version = "3", features = ["json"] }
+ratatui = "0.30"
+crossterm = "0.29"
+unicode-width = "0.2"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1

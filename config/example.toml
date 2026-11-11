@@ -1,0 +1,91 @@
+# myturn configuration. Every value below is the default: delete what you
+# do not change. Unknown keys are errors, so a typo never goes unnoticed.
+
+# How often the board looks again, in seconds (minimum 5).
+refresh_seconds = 30
+
+# Desktop notification when something new becomes yours while watching.
+notifications = true
+
+# ── Sources ────────────────────────────────────────────────────────────
+# Without any [[sources]], myturn uses gitlab.com when `glab` is installed
+# and github.com when `gh` is installed, with their own logins.
+#
+# [[sources]]
+# kind = "gitlab"
+# name = "gitlab"               # shown on the board; defaults to the kind
+# host = "gitlab.com"
+# token_env = "GITLAB_TOKEN"    # read first, when set
+# token_command = "glab config get token --host gitlab.com"
+# token_renew_command = "glab api user --hostname gitlab.com"  # run when the token is refused
+#
+# [[sources]]
+# kind = "github"
+# host = "github.com"
+#
+# [[sources]]
+# kind = "jira"
+# site = "https://your-company.atlassian.net"
+# email = "you@your-company.com"
+# token_env = "JIRA_API_TOKEN"  # https://id.atlassian.com/manage-profile/security/api-tokens
+# # token_command = "security find-generic-password -s myturn-jira -w"
+# jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
+
+# ── Review threads ─────────────────────────────────────────────────────
+[threads]
+# Who closes a thread once it is answered:
+#   "reviewer"  whoever opened it checks the answer and resolves it
+#   "author"    the author resolves threads once addressed
+#   "anyone"    no convention; only "who spoke last" counts
+who_resolves = "reviewer"
+# Comments from bots never put the ball in anyone's court.
+ignore_bots = true
+
+# ── Drafts ─────────────────────────────────────────────────────────────
+[drafts]
+# Someone else's draft you are a reviewer of:
+#   "wait"    listed as waiting on its author
+#   "review"  treated like any other review
+#   "ignore"  left off the board
+others = "wait"
+
+# ── Re-reviews ─────────────────────────────────────────────────────────
+[re_review]
+# Any of these makes a re-review due after your first pass:
+#   "author_replied"        someone answered in a thread you take part in
+#   "new_commits"           commits were pushed after your last review activity
+#   "re_requested"          your review was requested again
+#   "approval_reset"        your approval was reset or dismissed
+#   "all_threads_answered"  every thread you opened is answered or resolved
+triggers = ["author_replied", "new_commits", "re_requested", "approval_reset"]
+# Whether something you already approved can come back for a re-review.
+after_approval = false
+
+# ── Tickets ────────────────────────────────────────────────────────────
+[tickets]
+# Statuses that mean "not yours to move right now" (case-insensitive).
+waiting_statuses = ["blocked", "on hold", "in review", "waiting"]
+
+# ── Nudges ─────────────────────────────────────────────────────────────
+[nudge]
+# A waiting item nobody touched for this many days becomes a "nudge" to do.
+# 0 disables nudges.
+after_days = 0
+
+# ── Rules ──────────────────────────────────────────────────────────────
+# Every reason an item can be on the board is a rule. Each one can be
+# disabled, moved to the other list ("todo" or "waiting"), or reprioritized
+# (lower comes first). `myturn rules` prints them all as they apply.
+#
+# To do:    review_requested re_review reply_needed ticket_mentioned
+#           thread_to_resolve checks_failed conflicts ready_to_merge assigned
+#           no_reviewer ticket_in_progress ticket_todo nudge draft_to_finish
+# Waiting:  awaiting_review awaiting_author awaiting_reply checks_running
+#           ticket_blocked draft_by_other
+#
+# [rules.draft_to_finish]
+# enabled = false
+#
+# [rules.checks_running]
+# bucket = "todo"
+# priority = 45
