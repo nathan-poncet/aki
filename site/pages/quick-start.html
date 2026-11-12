@@ -1,0 +1,50 @@
+<!-- title: Quick start | lead: From an installed aki to a board you can read, in five steps. -->
+<h2>1. Check the sources</h2>
+<pre>aki doctor</pre>
+<pre data-cap="output">✓ gitlab     signed in as nat
+✓ github     signed in as nat</pre>
+<p>With no configuration, aki uses gitlab.com when <code>glab</code> is installed and github.com when <code>gh</code> is. A source marked <code>✗</code> says why: usually a missing <code>glab auth login</code> or <code>gh auth login</code>.</p>
+
+<h2>2. Open the board</h2>
+<pre>aki</pre>
+<p>Two panes: <strong>To do</strong>, what waits on you, and <strong>Waiting</strong>, what you cannot move further. The board refreshes every 30 seconds and shows the last known state while the first reading is under way.</p>
+
+<h2>3. Read a line</h2>
+<pre data-cap="one task">▲ Re-review   api!889   Typed errors for the key store   @ana   +1  130  5d</pre>
+<table>
+  <tr><th>Part</th><th>Meaning</th></tr>
+  <tr><td><code>▲</code> <code>▴</code></td><td>Hot, warm: the urgency score passed a threshold.</td></tr>
+  <tr><td><code>Re-review</code></td><td>The most pressing reason the task is listed. Yellow: yours to do. Cyan: waits on others.</td></tr>
+  <tr><td><code>api!889</code></td><td>The repository and the reference.</td></tr>
+  <tr><td><code>@ana</code></td><td>Who is on the other side: the author when you review.</td></tr>
+  <tr><td><code>+1</code></td><td>One more reason than the one shown.</td></tr>
+  <tr><td><code>130</code></td><td>The urgency score, in panes ordered by urgency.</td></tr>
+  <tr><td><code>5d</code></td><td>For how long the most pressing reason has been true.</td></tr>
+</table>
+
+<h2>4. Five keys</h2>
+<table>
+  <tr><th>Key</th><th>Does</th></tr>
+  <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td><td>Move between tasks and panes.</td></tr>
+  <tr><td><kbd>Enter</kbd></td><td>Open the task in the browser, on the thread when there is one.</td></tr>
+  <tr><td><kbd>i</kbd></td><td>Explain the task: why it is listed and how its score adds up.</td></tr>
+  <tr><td><kbd>p</kbd></td><td>Set it aside until a day, or until it moves.</td></tr>
+  <tr><td><kbd>?</kbd></td><td>Every key.</td></tr>
+</table>
+<p>The full list is on <a href="keys.html">Keys</a>.</p>
+
+<h2>5. Make it yours</h2>
+<pre>aki config init</pre>
+<p>This writes <code>~/.config/aki/config.toml</code> with every setting at its default and a comment on each. Common first changes:</p>
+<ul>
+  <li><a href="sources.html#jira">Add Jira</a>.</li>
+  <li><a href="rules.html#drafts">Keep your drafts in a pane of their own</a>.</li>
+  <li><a href="spaces.html">Split work and personal into spaces</a>.</li>
+  <li><a href="agents.html">Choose the agent that <kbd>a</kbd> opens</a>.</li>
+</ul>
+
+<h2>Without the board</h2>
+<pre>aki list --todo
+aki list --count
+aki list --json</pre>
+<p><code>aki list</code> prints the board once. <code>--count</code> gives one line for a prompt or a status bar; <code>--json</code> is for scripts. See <a href="cli.html">Command line</a>.</p>

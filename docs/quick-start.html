@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick start · aki</title>
+<meta name="description" content="From an installed aki to a board you can read, in five steps.">
+<meta property="og:title" content="Quick start · aki">
+<meta property="og:description" content="From an installed aki to a board you can read, in five steps.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/quick-start.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html" aria-current="page">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html">Sources</a><a href="cli.html">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">Start</div><h1>Quick start</h1><p class="lead">From an installed aki to a board you can read, in five steps.</p><h2 id="1-check-the-sources">1. Check the sources</h2>
+<div class="code"><pre>aki doctor</pre></div>
+<div class="code"><div class="cap">output</div><pre>✓ gitlab     signed in as nat
+✓ github     signed in as nat</pre></div>
+<p>With no configuration, aki uses gitlab.com when <code>glab</code> is installed and github.com when <code>gh</code> is. A source marked <code>✗</code> says why: usually a missing <code>glab auth login</code> or <code>gh auth login</code>.</p>
+
+<h2 id="2-open-the-board">2. Open the board</h2>
+<div class="code"><pre>aki</pre></div>
+<p>Two panes: <strong>To do</strong>, what waits on you, and <strong>Waiting</strong>, what you cannot move further. The board refreshes every 30 seconds and shows the last known state while the first reading is under way.</p>
+
+<h2 id="3-read-a-line">3. Read a line</h2>
+<div class="code"><div class="cap">one task</div><pre>▲ Re-review   api!889   Typed errors for the key store   @ana   +1  130  5d</pre></div>
+<table>
+  <tr><th>Part</th><th>Meaning</th></tr>
+  <tr><td><code>▲</code> <code>▴</code></td><td>Hot, warm: the urgency score passed a threshold.</td></tr>
+  <tr><td><code>Re-review</code></td><td>The most pressing reason the task is listed. Yellow: yours to do. Cyan: waits on others.</td></tr>
+  <tr><td><code>api!889</code></td><td>The repository and the reference.</td></tr>
+  <tr><td><code>@ana</code></td><td>Who is on the other side: the author when you review.</td></tr>
+  <tr><td><code>+1</code></td><td>One more reason than the one shown.</td></tr>
+  <tr><td><code>130</code></td><td>The urgency score, in panes ordered by urgency.</td></tr>
+  <tr><td><code>5d</code></td><td>For how long the most pressing reason has been true.</td></tr>
+</table>
+
+<h2 id="4-five-keys">4. Five keys</h2>
+<table>
+  <tr><th>Key</th><th>Does</th></tr>
+  <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td><td>Move between tasks and panes.</td></tr>
+  <tr><td><kbd>Enter</kbd></td><td>Open the task in the browser, on the thread when there is one.</td></tr>
+  <tr><td><kbd>i</kbd></td><td>Explain the task: why it is listed and how its score adds up.</td></tr>
+  <tr><td><kbd>p</kbd></td><td>Set it aside until a day, or until it moves.</td></tr>
+  <tr><td><kbd>?</kbd></td><td>Every key.</td></tr>
+</table>
+<p>The full list is on <a href="keys.html">Keys</a>.</p>
+
+<h2 id="5-make-it-yours">5. Make it yours</h2>
+<div class="code"><pre>aki config init</pre></div>
+<p>This writes <code>~/.config/aki/config.toml</code> with every setting at its default and a comment on each. Common first changes:</p>
+<ul>
+  <li><a href="sources.html#jira">Add Jira</a>.</li>
+  <li><a href="rules.html#drafts">Keep your drafts in a pane of their own</a>.</li>
+  <li><a href="spaces.html">Split work and personal into spaces</a>.</li>
+  <li><a href="agents.html">Choose the agent that <kbd>a</kbd> opens</a>.</li>
+</ul>
+
+<h2 id="without-the-board">Without the board</h2>
+<div class="code"><pre>aki list --todo
+aki list --count
+aki list --json</pre></div>
+<p><code>aki list</code> prints the board once. <code>--count</code> gives one line for a prompt or a status bar; <code>--json</code> is for scripts. See <a href="cli.html">Command line</a>.</p><div class="pn"><a href="install.html"><small>Previous</small>Install</a><a class="next" href="rules.html"><small>Next</small>Rules</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#1-check-the-sources">1. Check the sources</a><a href="#2-open-the-board">2. Open the board</a><a href="#3-read-a-line">3. Read a line</a><a href="#4-five-keys">4. Five keys</a><a href="#5-make-it-yours">5. Make it yours</a><a href="#without-the-board">Without the board</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

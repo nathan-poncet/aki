@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install · aki</title>
+<meta name="description" content="One command builds aki and tells you what to sign in to.">
+<meta property="og:title" content="Install · aki">
+<meta property="og:description" content="One command builds aki and tells you what to sign in to.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/install.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html" aria-current="page">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html">Sources</a><a href="cli.html">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">Start</div><h1>Install</h1><p class="lead">One command builds aki and tells you what to sign in to.</p><div class="code"><pre>curl -fsSL https://nathan-poncet.github.io/aki/install.sh | sh</pre></div>
+<p>The script builds aki from its repository with Cargo and installs one program, <code>aki</code>, in <code>~/.cargo/bin</code>. It then tells you whether <code>glab</code> and <code>gh</code> are present. It installs nothing else and needs no administrator rights.</p>
+
+<h2 id="requirements">Requirements</h2>
+<ul>
+  <li>macOS or Linux.</li>
+  <li>The Rust toolchain (<code>cargo</code>). Without it the script stops and says so; <code>AKI_RUSTUP=1</code> lets it install the toolchain with rustup first.</li>
+  <li><code>git</code>.</li>
+  <li>For GitLab, the <a href="https://gitlab.com/gitlab-org/cli">glab</a> CLI; for GitHub, the <a href="https://cli.github.com">gh</a> CLI. aki uses their logins. A token in an environment variable works too: see <a href="sources.html">Sources</a>.</li>
+</ul>
+
+<h2 id="other-ways">Other ways</h2>
+<div class="tabs">
+  <section data-tab="Cargo">
+    <div class="code"><pre>cargo install --locked --git https://github.com/nathan-poncet/aki</pre></div>
+  </section>
+  <section data-tab="From source">
+    <div class="code"><pre>git clone https://github.com/nathan-poncet/aki
+cd aki
+cargo install --path .</pre></div>
+  </section>
+  <section data-tab="A given version">
+    <div class="code"><pre>curl -fsSL https://nathan-poncet.github.io/aki/install.sh | AKI_REF=main sh</pre></div>
+    <p><code>AKI_REF</code> is a tag, a branch or a commit.</p>
+  </section>
+</div>
+
+<h2 id="sign-in">Sign in</h2>
+<p>aki reads each service with the login of its own CLI. Sign in to the ones you use:</p>
+<div class="code"><pre>glab auth login</pre></div>
+<div class="or">or</div>
+<div class="code"><pre>gh auth login</pre></div>
+<p>Jira needs three lines of configuration: see <a href="sources.html#jira">Sources</a>.</p>
+
+<h2 id="check">Check</h2>
+<div class="code"><pre>aki doctor</pre></div>
+<p>It prints one line per source: who you are signed in as, or why the source cannot be read.</p>
+
+<h2 id="update">Update</h2>
+<p>Run the install command again. Cargo rebuilds only when the sources changed.</p>
+
+<h2 id="uninstall">Uninstall</h2>
+<div class="code"><pre>cargo uninstall aki
+rm -rf ~/.config/aki ~/.cache/aki ~/.local/state/aki</pre></div>
+<p>The second line removes your configuration and spaces, the cache, and what you set aside.</p><div class="pn"><a class="next" href="quick-start.html"><small>Next</small>Quick start</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#requirements">Requirements</a><a href="#other-ways">Other ways</a><a href="#sign-in">Sign in</a><a href="#check">Check</a><a href="#update">Update</a><a href="#uninstall">Uninstall</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

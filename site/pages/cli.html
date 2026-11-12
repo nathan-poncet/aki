@@ -1,0 +1,69 @@
+<!-- title: Command line | lead: Every command. aki alone opens the board in a terminal, and prints the list when piped. -->
+<h2>Commands</h2>
+<table>
+  <tr><th>Command</th><th>Does</th></tr>
+  <tr><td><code>aki</code></td><td>The live board in a terminal; the list when piped.</td></tr>
+  <tr><td><code>aki watch</code></td><td>The live board.</td></tr>
+  <tr><td><code>aki list</code></td><td>Print the board once. See <a href="#aki-list">below</a>.</td></tr>
+  <tr><td><code>aki agent REF</code></td><td>Open your <a href="agents.html">agent</a> on a task. <code>--dry-run</code> only says where, and prints the brief.</td></tr>
+  <tr><td><code>aki spaces</code></td><td>Your <a href="spaces.html">spaces</a>: how each is made, what it holds.</td></tr>
+  <tr><td><code>aki spaces reset</code></td><td>Start them over from your sources; the old file is kept as <code>spaces.toml.bak</code>.</td></tr>
+  <tr><td><code>aki mcp</code></td><td>Serve the board to an <a href="assistants.html">assistant</a>.</td></tr>
+  <tr><td><code>aki mcp setup</code></td><td>What to paste where to plug it in.</td></tr>
+  <tr><td><code>aki rules</code></td><td>Every <a href="rules.html">rule</a> and weight as configured.</td></tr>
+  <tr><td><code>aki doctor</code></td><td>Check the connection to every source.</td></tr>
+  <tr><td><code>aki sounds [NAME]</code></td><td>List the sounds that can be named, or play one.</td></tr>
+  <tr><td><code>aki cache path</code>, <code>clear</code></td><td>Where the cache is; empty it.</td></tr>
+  <tr><td><code>aki config path</code>, <code>init</code></td><td>Where the configuration is; write one with the defaults.</td></tr>
+  <tr><td><code>aki help</code>, <code>version</code></td><td></td></tr>
+</table>
+
+<h2>aki list</h2>
+<pre>aki list --todo --space Work --filter "repo:web -is:draft" --sort waiting</pre>
+<table>
+  <tr><th>Option</th><th>Meaning</th></tr>
+  <tr><td><code>--todo</code>, <code>--waiting</code></td><td>Only one side.</td></tr>
+  <tr><td><code>--space NAME</code></td><td>Only what belongs to one of your spaces.</td></tr>
+  <tr><td><code>--filter QUERY</code></td><td>A <a href="filters.html">filter</a>.</td></tr>
+  <tr><td><code>--sort ORDER</code></td><td><code>urgency</code> (default), <code>rule</code>, <code>waiting</code>, <code>updated</code>, <code>created</code>.</td></tr>
+  <tr><td><code>--reverse</code></td><td>The opposite order.</td></tr>
+  <tr><td><code>--fresh</code></td><td>Ask the sources even if a recent reading is cached.</td></tr>
+  <tr><td><code>--json</code></td><td>Machine-readable.</td></tr>
+  <tr><td><code>--count</code></td><td>One line.</td></tr>
+</table>
+
+<h3>In a prompt or a status bar</h3>
+<pre>aki list --count</pre>
+<pre data-cap="output">11 to do · 13 waiting · 3 set aside · 19 drafts apart</pre>
+<p>A reading younger than <code>cache_seconds</code> (60 by default) is reused, so the command returns at once when called often.</p>
+
+<h3>JSON</h3>
+<pre>aki list --json --todo</pre>
+<pre data-cap="one task, shortened">{
+  "id": "gitlab:acme/api!889",
+  "source": "gitlab",
+  "container": "acme/api",
+  "reference": "!889",
+  "title": "Typed errors for the key store",
+  "url": "https://gitlab.example/acme/api/-/merge_requests/889",
+  "role": "reviewer",
+  "counterpart": "ana",
+  "bucket": "todo",
+  "waiting_since": 1794000000,
+  "urgency": { "score": 130, "rule": 80, "waiting": 15, "ticket": 35, "heat": "hot" },
+  "draft": false,
+  "tickets": [{ "key": "PROJ-440", "priority": "high" }],
+  "reasons": [
+    { "kind": "re_review", "bucket": "todo", "priority": 20,
+      "why": "the author replied, new commits" }
+  ]
+}</pre>
+<p>The document has <code>todo</code> and <code>waiting</code> lists, the <code>sources</code> that answered, and the <code>failures</code> of those that did not. Times are seconds since 1970.</p>
+
+<h2>Exit status</h2>
+<table>
+  <tr><th>Status</th><th>Meaning</th></tr>
+  <tr><td><code>0</code></td><td>Done. <code>aki list</code> succeeds as long as something could be shown, even from the cache.</td></tr>
+  <tr><td><code>1</code></td><td><code>aki list</code>: no source could be read and nothing was remembered. <code>aki doctor</code>: a source failed.</td></tr>
+  <tr><td><code>2</code></td><td>A command or the configuration could not be understood.</td></tr>
+</table>

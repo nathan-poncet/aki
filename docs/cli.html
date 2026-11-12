@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Command line · aki</title>
+<meta name="description" content="Every command. aki alone opens the board in a terminal, and prints the list when piped.">
+<meta property="og:title" content="Command line · aki">
+<meta property="og:description" content="Every command. aki alone opens the board in a terminal, and prints the list when piped.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/cli.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html">Sources</a><a href="cli.html" aria-current="page">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">Reference</div><h1>Command line</h1><p class="lead">Every command. aki alone opens the board in a terminal, and prints the list when piped.</p><h2 id="commands">Commands</h2>
+<table>
+  <tr><th>Command</th><th>Does</th></tr>
+  <tr><td><code>aki</code></td><td>The live board in a terminal; the list when piped.</td></tr>
+  <tr><td><code>aki watch</code></td><td>The live board.</td></tr>
+  <tr><td><code>aki list</code></td><td>Print the board once. See <a href="#aki-list">below</a>.</td></tr>
+  <tr><td><code>aki agent REF</code></td><td>Open your <a href="agents.html">agent</a> on a task. <code>--dry-run</code> only says where, and prints the brief.</td></tr>
+  <tr><td><code>aki spaces</code></td><td>Your <a href="spaces.html">spaces</a>: how each is made, what it holds.</td></tr>
+  <tr><td><code>aki spaces reset</code></td><td>Start them over from your sources; the old file is kept as <code>spaces.toml.bak</code>.</td></tr>
+  <tr><td><code>aki mcp</code></td><td>Serve the board to an <a href="assistants.html">assistant</a>.</td></tr>
+  <tr><td><code>aki mcp setup</code></td><td>What to paste where to plug it in.</td></tr>
+  <tr><td><code>aki rules</code></td><td>Every <a href="rules.html">rule</a> and weight as configured.</td></tr>
+  <tr><td><code>aki doctor</code></td><td>Check the connection to every source.</td></tr>
+  <tr><td><code>aki sounds [NAME]</code></td><td>List the sounds that can be named, or play one.</td></tr>
+  <tr><td><code>aki cache path</code>, <code>clear</code></td><td>Where the cache is; empty it.</td></tr>
+  <tr><td><code>aki config path</code>, <code>init</code></td><td>Where the configuration is; write one with the defaults.</td></tr>
+  <tr><td><code>aki help</code>, <code>version</code></td><td></td></tr>
+</table>
+
+<h2 id="aki-list">aki list</h2>
+<div class="code"><pre>aki list --todo --space Work --filter "repo:web -is:draft" --sort waiting</pre></div>
+<table>
+  <tr><th>Option</th><th>Meaning</th></tr>
+  <tr><td><code>--todo</code>, <code>--waiting</code></td><td>Only one side.</td></tr>
+  <tr><td><code>--space NAME</code></td><td>Only what belongs to one of your spaces.</td></tr>
+  <tr><td><code>--filter QUERY</code></td><td>A <a href="filters.html">filter</a>.</td></tr>
+  <tr><td><code>--sort ORDER</code></td><td><code>urgency</code> (default), <code>rule</code>, <code>waiting</code>, <code>updated</code>, <code>created</code>.</td></tr>
+  <tr><td><code>--reverse</code></td><td>The opposite order.</td></tr>
+  <tr><td><code>--fresh</code></td><td>Ask the sources even if a recent reading is cached.</td></tr>
+  <tr><td><code>--json</code></td><td>Machine-readable.</td></tr>
+  <tr><td><code>--count</code></td><td>One line.</td></tr>
+</table>
+
+<h3 id="in-a-prompt-or-a-status-bar">In a prompt or a status bar</h3>
+<div class="code"><pre>aki list --count</pre></div>
+<div class="code"><div class="cap">output</div><pre>11 to do · 13 waiting · 3 set aside · 19 drafts apart</pre></div>
+<p>A reading younger than <code>cache_seconds</code> (60 by default) is reused, so the command returns at once when called often.</p>
+
+<h3 id="json">JSON</h3>
+<div class="code"><pre>aki list --json --todo</pre></div>
+<div class="code"><div class="cap">one task, shortened</div><pre>{
+  "id": "gitlab:acme/api!889",
+  "source": "gitlab",
+  "container": "acme/api",
+  "reference": "!889",
+  "title": "Typed errors for the key store",
+  "url": "https://gitlab.example/acme/api/-/merge_requests/889",
+  "role": "reviewer",
+  "counterpart": "ana",
+  "bucket": "todo",
+  "waiting_since": 1794000000,
+  "urgency": { "score": 130, "rule": 80, "waiting": 15, "ticket": 35, "heat": "hot" },
+  "draft": false,
+  "tickets": [{ "key": "PROJ-440", "priority": "high" }],
+  "reasons": [
+    { "kind": "re_review", "bucket": "todo", "priority": 20,
+      "why": "the author replied, new commits" }
+  ]
+}</pre></div>
+<p>The document has <code>todo</code> and <code>waiting</code> lists, the <code>sources</code> that answered, and the <code>failures</code> of those that did not. Times are seconds since 1970.</p>
+
+<h2 id="exit-status">Exit status</h2>
+<table>
+  <tr><th>Status</th><th>Meaning</th></tr>
+  <tr><td><code>0</code></td><td>Done. <code>aki list</code> succeeds as long as something could be shown, even from the cache.</td></tr>
+  <tr><td><code>1</code></td><td><code>aki list</code>: no source could be read and nothing was remembered. <code>aki doctor</code>: a source failed.</td></tr>
+  <tr><td><code>2</code></td><td>A command or the configuration could not be understood.</td></tr>
+</table><div class="pn"><a href="sources.html"><small>Previous</small>Sources</a><a class="next" href="faq.html"><small>Next</small>FAQ</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#commands">Commands</a><a href="#aki-list">aki list</a><a href="#in-a-prompt-or-a-status-bar" class="sub">In a prompt or a status bar</a><a href="#json" class="sub">JSON</a><a href="#exit-status">Exit status</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

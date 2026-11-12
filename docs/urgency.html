@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Urgency · aki</title>
+<meta name="description" content="A score decides what comes first. It is the sum of three things, each shown on the board.">
+<meta property="og:title" content="Urgency · aki">
+<meta property="og:description" content="A score decides what comes first. It is the sum of three things, each shown on the board.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/urgency.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html" aria-current="page">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html">Sources</a><a href="cli.html">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">The board</div><h1>Urgency</h1><p class="lead">A score decides what comes first. It is the sum of three things, each shown on the board.</p><div class="code"><div class="cap">the formula</div><pre>urgency = (100 − rule priority) + waiting + ticket</pre></div>
+
+<h2 id="the-three-parts">The three parts</h2>
+<table>
+  <tr><th>Part</th><th>Points</th><th>From</th></tr>
+  <tr><td>Rule</td><td>100 − priority</td><td>The <a href="rules.html">rule</a> that lists the task. A review to do (priority 10) gives 90; a draft to finish (priority 90) gives 10.</td></tr>
+  <tr><td>Waiting</td><td>3 per day, at most 60</td><td>The full days since the next step arrived: since the review was requested, since the oldest unanswered reply, since your last word when you wait on someone.</td></tr>
+  <tr><td>Ticket</td><td>+5, plus the priority</td><td>A change that names a ticket in its title or branch (<code>PROJ-12</code>) gets 5, plus the points of the ticket's priority when Jira can tell it. A ticket gets the points of its own priority.</td></tr>
+</table>
+<table>
+  <tr><th>Ticket priority</th><th>Points</th></tr>
+  <tr><td>Highest</td><td>+50</td></tr>
+  <tr><td>High</td><td>+30</td></tr>
+  <tr><td>Medium</td><td>+10</td></tr>
+  <tr><td>Low</td><td>0</td></tr>
+  <tr><td>Lowest</td><td>−10</td></tr>
+</table>
+
+<h2 id="an-example">An example</h2>
+<div class="code"><div class="cap">i on a task</div><pre>HOW ITS URGENCY ADDS UP
+rule          80  "Re-review" has priority 20 (0 first, 100 last): 100 − 20
+waiting      +15  5 days × 3 a day
+ticket       +35  tied to PROJ-440, "high" (+30), and +5 for naming a ticket
+urgency    = 130  hot: warm ▴ from 100, hot ▲ from 130</pre></div>
+
+<h2 id="where-the-board-shows-it">Where the board shows it</h2>
+<ul>
+  <li>The detail pane sums it up: <code>urgency 130 = rule 80, waiting +15, PROJ-440 (high) +35</code>.</li>
+  <li>Panes ordered by urgency show the score on every line.</li>
+  <li><kbd>i</kbd> on a task lays it out line by line, with your own weights.</li>
+  <li><code>▴</code> marks a task from 100 points (warm), <code>▲</code> from 130 (hot). The filter <code>heat:hot,warm</code> keeps them.</li>
+</ul>
+
+<h2 id="orders">Orders</h2>
+<p>Panes list the most urgent first by default. <kbd>s</kbd> changes a pane's order and <kbd>v</kbd> reverses it.</p>
+<table>
+  <tr><th>Order</th><th>First</th></tr>
+  <tr><td><code>urgency</code></td><td>The highest score; among equals, the one that has waited longest.</td></tr>
+  <tr><td><code>rule</code></td><td>The rules' own order; among equals, the freshest.</td></tr>
+  <tr><td><code>waiting</code></td><td>What has waited longest.</td></tr>
+  <tr><td><code>updated</code></td><td>What moved most recently.</td></tr>
+  <tr><td><code>created</code></td><td>What was opened first.</td></tr>
+</table>
+
+<h2 id="change-the-weights">Change the weights</h2>
+<div class="code"><div class="cap">~/.config/aki/config.toml</div><pre>[urgency]
+per_day = 3
+waiting_cap = 60
+linked = 5
+highest = 50
+high = 30
+medium = 10
+low = 0
+lowest = -10
+warm = 100
+hot = 130</pre></div>
+<p>The rule's part follows the rule's priority: change it under <code>[rules.&lt;name&gt;]</code>. <code>aki rules</code> prints the weights in use.</p>
+
+<h2 id="how-a-change-is-tied-to-a-ticket">How a change is tied to a ticket</h2>
+<p>By a key in its title or branch name, such as <code>PROJ-12</code>. With a Jira source configured, the key is looked up, even for tickets that are not yours, and its priority counts. Without one, anything shaped like a key counts as a ticket and gets the 5 points.</p><div class="pn"><a href="rules.html"><small>Previous</small>Rules</a><a class="next" href="spaces.html"><small>Next</small>Spaces and panes</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#the-three-parts">The three parts</a><a href="#an-example">An example</a><a href="#where-the-board-shows-it">Where the board shows it</a><a href="#orders">Orders</a><a href="#change-the-weights">Change the weights</a><a href="#how-a-change-is-tied-to-a-ticket">How a change is tied to a ticket</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

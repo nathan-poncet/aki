@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration · aki</title>
+<meta name="description" content="One TOML file. Every setting has a default; write only what you change.">
+<meta property="og:title" content="Configuration · aki">
+<meta property="og:description" content="One TOML file. Every setting has a default; write only what you change.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/configuration.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html" aria-current="page">Configuration</a><a href="sources.html">Sources</a><a href="cli.html">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">Reference</div><h1>Configuration</h1><p class="lead">One TOML file. Every setting has a default; write only what you change.</p><div class="code"><pre>aki config init</pre></div>
+<p>This writes <code>~/.config/aki/config.toml</code> with every setting at its default and a comment on each. <code>aki config path</code> prints where the file is. Unknown keys and names are errors.</p>
+
+<h2 id="files">Files</h2>
+<table>
+  <tr><th>File</th><th>Holds</th></tr>
+  <tr><td><code>~/.config/aki/config.toml</code></td><td>The settings on this page. <code>$AKI_CONFIG</code> names another file; <code>$XDG_CONFIG_HOME</code> is honored.</td></tr>
+  <tr><td><code>~/.config/aki/spaces.toml</code></td><td>Your <a href="spaces.html">spaces</a>, rewritten when you rearrange the board.</td></tr>
+  <tr><td><code>~/.cache/aki/cache.db</code></td><td>What was read from the sources (SQLite). <code>$XDG_CACHE_HOME</code> is honored.</td></tr>
+  <tr><td><code>~/.local/state/aki/snoozed.json</code></td><td>What you set aside. <code>$XDG_STATE_HOME</code> is honored.</td></tr>
+</table>
+
+<h2 id="general">General</h2>
+<div class="code"><pre>refresh_seconds = 30
+notifications = true
+cache_seconds = 60</pre></div>
+<table>
+  <tr><th>Key</th><th>Meaning</th></tr>
+  <tr><td><code>refresh_seconds</code></td><td>How often the board looks again. Minimum 5.</td></tr>
+  <tr><td><code>notifications</code></td><td>A desktop notification when something new becomes yours.</td></tr>
+  <tr><td><code>cache_seconds</code></td><td><code>aki list</code> reuses a reading younger than this. <code>0</code>: always ask.</td></tr>
+</table>
+
+<h2 id="sources">Sources</h2>
+<div class="code"><pre>[[sources]]
+kind = "gitlab"
+
+[[sources]]
+kind = "github"
+
+[[sources]]
+kind = "jira"
+site = "https://your-company.atlassian.net"
+email = "you@your-company.com"
+token_env = "JIRA_API_TOKEN"</pre></div>
+<p>Every key is on <a href="sources.html">Sources</a>.</p>
+
+<h2 id="rules">Rules</h2>
+<div class="code"><pre>[threads]
+who_resolves = "reviewer"
+ignore_bots = true
+
+[drafts]
+mine = "todo"
+others = "wait"
+
+[re_review]
+triggers = ["author_replied", "new_commits", "re_requested", "approval_reset"]
+after_approval = false
+
+[tickets]
+waiting_statuses = ["blocked", "on hold", "in review", "waiting"]
+
+[nudge]
+after_days = 0
+
+[rules.checks_running]
+bucket = "todo"
+priority = 45</pre></div>
+<p>Every key is on <a href="rules.html">Rules</a>.</p>
+
+<h2 id="urgency">Urgency</h2>
+<div class="code"><pre>[urgency]
+per_day = 3
+waiting_cap = 60
+linked = 5
+highest = 50
+high = 30
+medium = 10
+low = 0
+lowest = -10
+warm = 100
+hot = 130</pre></div>
+<p>Every key is on <a href="urgency.html#change-the-weights">Urgency</a>.</p>
+
+<h2 id="agent">Agent</h2>
+<div class="code"><pre>[agent]
+command = "claude {prompt}"
+instructions = ""
+launcher = "auto"
+chat_url = "https://claude.ai/new?q={prompt}"
+workspace = "{repo}"
+tab = "{ticket} {ref}"
+focus = true
+# terminal = ["alacritty", "--title", "{title}", "-e", "{command}"]
+# herdr_session = "work"
+# roots = ["~/code"]
+
+# [agent.repos]
+# "group/project" = "~/elsewhere/project"</pre></div>
+<p>Every key is on <a href="agents.html">Agents</a>.</p>
+
+<h2 id="sounds">Sounds</h2>
+<div class="code"><pre>[sounds]
+enabled = true
+# new_task = "Glass"
+
+# [sounds.rules]
+# review_requested = "Ping"</pre></div>
+<p>Every key is on <a href="set-aside.html#sounds">Set aside, be told</a>.</p>
+
+<h2 id="assistants">Assistants</h2>
+<div class="code"><pre>[mcp]
+enabled = true
+set_aside = true
+start_agent = true</pre></div>
+<p>Every key is on <a href="assistants.html#what-it-may-do">Assistants</a>.</p><div class="pn"><a href="set-aside.html"><small>Previous</small>Set aside, be told</a><a class="next" href="sources.html"><small>Next</small>Sources</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#files">Files</a><a href="#general">General</a><a href="#sources">Sources</a><a href="#rules">Rules</a><a href="#urgency">Urgency</a><a href="#agent">Agent</a><a href="#sounds">Sounds</a><a href="#assistants">Assistants</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

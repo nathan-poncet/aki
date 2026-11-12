@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rules · aki</title>
+<meta name="description" content="Every reason a task is on the board is a rule. Each rule can be turned off, moved to the other side, or reordered.">
+<meta property="og:title" content="Rules · aki">
+<meta property="og:description" content="Every reason a task is on the board is a rule. Each rule can be turned off, moved to the other side, or reordered.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/rules.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html" aria-current="page">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html">Sources</a><a href="cli.html">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">The board</div><h1>Rules</h1><p class="lead">Every reason a task is on the board is a rule. Each rule can be turned off, moved to the other side, or reordered.</p><p>For each merge request, pull request and ticket you are involved in, aki looks at who spoke last in every thread, the state of reviews and approvals, the pipeline, the branch, and the ticket's status. Each fact that asks something of someone becomes a <strong>reason</strong>. A task is listed once, under its most pressing reason; the others show in the detail pane.</p>
+
+<h2 id="to-do">To do</h2>
+<p>The next step is yours.</p>
+<table>
+  <tr><th>Label</th><th>Rule</th><th>Priority</th><th>When</th></tr>
+  <tr><td>Review</td><td><code>review_requested</code></td><td>10</td><td>Your review is requested and you have not started.</td></tr>
+  <tr><td>Re-review</td><td><code>re_review</code></td><td>20</td><td>You reviewed, and since then something moved (see <a href="#re-reviews">Re-reviews</a>).</td></tr>
+  <tr><td>Reply</td><td><code>reply_needed</code></td><td>30</td><td>Someone waits for your answer in a thread, or mentioned you.</td></tr>
+  <tr><td>Mentioned</td><td><code>ticket_mentioned</code></td><td>35</td><td>Someone mentioned you on a ticket and you have not commented since.</td></tr>
+  <tr><td>Resolve threads</td><td><code>thread_to_resolve</code></td><td>40</td><td>A thread you opened was answered: check it and close it.</td></tr>
+  <tr><td>Fix checks</td><td><code>checks_failed</code></td><td>50</td><td>The pipeline of your change failed.</td></tr>
+  <tr><td>Fix conflicts</td><td><code>conflicts</code></td><td>55</td><td>Your change conflicts with its target branch.</td></tr>
+  <tr><td>Rebase</td><td><code>rebase</code></td><td>57</td><td>Your change is behind its target branch. Not shown when it already conflicts.</td></tr>
+  <tr><td>Merge</td><td><code>ready_to_merge</code></td><td>60</td><td>Your change is approved, green, with no open thread, and you can merge it.</td></tr>
+  <tr><td>Assigned</td><td><code>assigned</code></td><td>65</td><td>A change you neither wrote nor review is assigned to you.</td></tr>
+  <tr><td>Ask a review</td><td><code>no_reviewer</code></td><td>70</td><td>Your change is ready and nobody was asked to review it.</td></tr>
+  <tr><td>In progress</td><td><code>ticket_in_progress</code></td><td>75</td><td>A ticket of yours is in progress.</td></tr>
+  <tr><td>To do</td><td><code>ticket_todo</code></td><td>80</td><td>A ticket of yours is not started.</td></tr>
+  <tr><td>Nudge</td><td><code>nudge</code></td><td>85</td><td>A waiting item has not moved for a number of days (off by default, see <a href="#nudge">Nudge</a>).</td></tr>
+  <tr><td>Finish draft</td><td><code>draft_to_finish</code></td><td>90</td><td>Your change is still a draft.</td></tr>
+</table>
+
+<h2 id="waiting">Waiting</h2>
+<p>You cannot move it further: someone or something else has the next step.</p>
+<table>
+  <tr><th>Label</th><th>Rule</th><th>Priority</th><th>When</th></tr>
+  <tr><td>Awaiting review</td><td><code>awaiting_review</code></td><td>10</td><td>Your change waits for reviewers. The detail names who has not looked.</td></tr>
+  <tr><td>Awaiting author</td><td><code>awaiting_author</code></td><td>20</td><td>You reviewed; nothing new since.</td></tr>
+  <tr><td>Awaiting reply</td><td><code>awaiting_reply</code></td><td>30</td><td>You answered; the other side has to close the thread.</td></tr>
+  <tr><td>Checks running</td><td><code>checks_running</code></td><td>40</td><td>The pipeline of your change is running.</td></tr>
+  <tr><td>Blocked</td><td><code>ticket_blocked</code></td><td>50</td><td>A ticket of yours is blocked by another, or in a waiting status.</td></tr>
+  <tr><td>Draft</td><td><code>draft_by_other</code></td><td>60</td><td>A change you review is still a draft.</td></tr>
+</table>
+<p>One reason to do is enough to put the whole task in <strong>To do</strong>.</p>
+
+<h2 id="change-a-rule">Change a rule</h2>
+<p>Any rule takes three settings. A lower priority comes first.</p>
+<div class="code"><div class="cap">~/.config/aki/config.toml</div><pre>[rules.draft_to_finish]
+enabled = false
+
+[rules.checks_running]
+bucket = "todo"
+priority = 45</pre></div>
+<p><code>aki rules</code> prints every rule as it applies. An unknown rule name is an error, so a typo never silently disables a rule.</p>
+
+<h2 id="threads">Threads</h2>
+<p>Teams differ on who closes a review thread once it is answered.</p>
+<div class="code"><pre>[threads]
+who_resolves = "reviewer"
+ignore_bots = true</pre></div>
+<table>
+  <tr><th>Value</th><th>Effect</th></tr>
+  <tr><td><code>"reviewer"</code></td><td>Whoever opened the thread checks the answer and resolves it. An answered thread you opened is <em>Resolve threads</em>; one you answered is <em>Awaiting reply</em>.</td></tr>
+  <tr><td><code>"author"</code></td><td>The author resolves threads once addressed.</td></tr>
+  <tr><td><code>"anyone"</code></td><td>No convention: only who spoke last counts.</td></tr>
+</table>
+<p>With <code>ignore_bots</code>, a bot's comment never gives anyone the next step.</p>
+
+<h2 id="re-reviews">Re-reviews</h2>
+<p>After your first review, any of these triggers makes a re-review due:</p>
+<div class="code"><pre>[re_review]
+triggers = ["author_replied", "new_commits", "re_requested", "approval_reset"]
+after_approval = false</pre></div>
+<table>
+  <tr><th>Trigger</th><th>Fires when</th></tr>
+  <tr><td><code>author_replied</code></td><td>Someone answered in a thread you take part in.</td></tr>
+  <tr><td><code>new_commits</code></td><td>Commits were pushed after your last review activity.</td></tr>
+  <tr><td><code>re_requested</code></td><td>Your review was requested again.</td></tr>
+  <tr><td><code>approval_reset</code></td><td>Your approval was reset or dismissed.</td></tr>
+  <tr><td><code>all_threads_answered</code></td><td>Every thread you opened has been answered or resolved. Not in the default list.</td></tr>
+</table>
+<p><code>after_approval = true</code> lets a re-review be due on a change you already approved.</p>
+
+<h2 id="drafts">Drafts</h2>
+<div class="code"><pre>[drafts]
+mine = "todo"
+others = "wait"</pre></div>
+<table>
+  <tr><th>Setting</th><th>Value</th><th>Effect</th></tr>
+  <tr><td rowspan="3"><code>mine</code></td><td><code>"todo"</code></td><td>Your drafts are listed with everything else that waits on you.</td></tr>
+  <tr><td><code>"apart"</code></td><td>They stay on the board but leave <em>To do</em>, the counts and the notifications. They show only in panes filtered on <code>is:draft</code>.</td></tr>
+  <tr><td><code>"ignore"</code></td><td>They are left off the board until they are ready.</td></tr>
+  <tr><td rowspan="3"><code>others</code></td><td><code>"wait"</code></td><td>A draft you review is listed as waiting on its author.</td></tr>
+  <tr><td><code>"review"</code></td><td>It is treated like any other review.</td></tr>
+  <tr><td><code>"ignore"</code></td><td>It is left off the board.</td></tr>
+</table>
+<p>To give your drafts a pane of their own, set <code>mine = "apart"</code> and add a pane filtered on <code>is:draft role:author</code>. See <a href="spaces.html#a-pane-for-your-drafts">Spaces</a>.</p>
+
+<h2 id="nudge">Nudge</h2>
+<div class="code"><pre>[nudge]
+after_days = 7</pre></div>
+<p>A waiting item that nobody touched for that many days becomes <em>Nudge</em> in <strong>To do</strong>. <code>0</code>, the default, turns it off.</p>
+
+<h2 id="ticket-statuses">Ticket statuses</h2>
+<div class="code"><pre>[tickets]
+waiting_statuses = ["blocked", "on hold", "in review", "waiting"]</pre></div>
+<p>A ticket in one of these statuses (compared without case) is <em>Blocked</em>, in <strong>Waiting</strong>. So is a ticket with an "is blocked by" link.</p><div class="pn"><a href="quick-start.html"><small>Previous</small>Quick start</a><a class="next" href="urgency.html"><small>Next</small>Urgency</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#to-do">To do</a><a href="#waiting">Waiting</a><a href="#change-a-rule">Change a rule</a><a href="#threads">Threads</a><a href="#re-reviews">Re-reviews</a><a href="#drafts">Drafts</a><a href="#nudge">Nudge</a><a href="#ticket-statuses">Ticket statuses</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

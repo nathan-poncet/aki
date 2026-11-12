@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spaces and panes · aki</title>
+<meta name="description" content="A space keeps part of the board. Its panes are filtered, grouped and sorted views of it, tiled in a layout.">
+<meta property="og:title" content="Spaces and panes · aki">
+<meta property="og:description" content="A space keeps part of the board. Its panes are filtered, grouped and sorted views of it, tiled in a layout.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/spaces.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html" aria-current="page">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html">Sources</a><a href="cli.html">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">The board</div><h1>Spaces and panes</h1><p class="lead">A space keeps part of the board. Its panes are filtered, grouped and sorted views of it, tiled in a layout.</p><h2 id="how-spaces-are-made">How spaces are made</h2>
+<p>On a first run aki makes <strong>All</strong>, plus one space per source when there are several. From then on spaces are what you make them: every change in the board is saved at once to <code>~/.config/aki/spaces.toml</code>, which you can also edit by hand.</p>
+<p>A space has:</p>
+<ul>
+  <li>a <strong>scope</strong>: a <a href="filters.html">filter</a> saying what belongs to it at all;</li>
+  <li>a <strong>layout</strong>: how its panes are tiled;</li>
+  <li>one or more <strong>panes</strong>, each with its own filter, grouping and order.</li>
+</ul>
+
+<h2 id="see-what-a-space-holds">See what a space holds</h2>
+<p><kbd>I</kbd> in the board explains the shown space: its scope, its layout, its panes, and the repositories and projects it holds right now with their counts.</p>
+<div class="code"><pre>aki spaces</pre></div>
+<div class="code"><div class="cap">output</div><pre>2 Work
+    scope   source:gitlab,jira
+    layout  master
+    pane 1  To do · filter: is:todo · group: repo · sort: waiting ↓
+    pane 2  Waiting · filter: is:waiting · group: repo · sort: urgency ↓
+    holds   gitlab · acme/api  (7 to do, 2 waiting)
+            gitlab · acme/web  (2 to do, 3 waiting)</pre></div>
+
+<h2 id="work-on-spaces">Work on spaces</h2>
+<table>
+  <tr><th>Key</th><th>Does</th></tr>
+  <tr><td><kbd>1</kbd>-<kbd>9</kbd>, <kbd>,</kbd> <kbd>.</kbd></td><td>Show a space, or click it in the top bar.</td></tr>
+  <tr><td><kbd>N</kbd></td><td>New space.</td></tr>
+  <tr><td><kbd>S</kbd></td><td>Its scope. <code>source:github</code> keeps one source, <code>repo:web</code> one repository, <code>-repo:legacy</code> leaves one out.</td></tr>
+  <tr><td><kbd>R</kbd> <kbd>X</kbd></td><td>Rename it, remove it.</td></tr>
+  <tr><td><kbd>t</kbd></td><td>Its layout: columns → rows → master → grid.</td></tr>
+  <tr><td><kbd>&lt;</kbd> <kbd>&gt;</kbd></td><td>Move it among the others.</td></tr>
+</table>
+
+<h2 id="work-on-panes">Work on panes</h2>
+<table>
+  <tr><th>Key</th><th>Does</th></tr>
+  <tr><td><kbd>/</kbd></td><td>Filter the pane, applied as you type.</td></tr>
+  <tr><td><kbd>b</kbd></td><td>Its side: to do → waiting → both.</td></tr>
+  <tr><td><kbd>g</kbd></td><td>Its grouping: none → repo → kind → source → person → role.</td></tr>
+  <tr><td><kbd>s</kbd> <kbd>v</kbd></td><td>Its <a href="urgency.html#orders">order</a>, and the reverse.</td></tr>
+  <tr><td><kbd>n</kbd> <kbd>x</kbd></td><td>New pane beside this one, with the same view; close it.</td></tr>
+  <tr><td><kbd>Shift</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>Move it among the others.</td></tr>
+  <tr><td><kbd>m</kbd> then <kbd>1</kbd>-<kbd>9</kbd></td><td>Send it to another space.</td></tr>
+  <tr><td><kbd>e</kbd></td><td>Name it.</td></tr>
+  <tr><td><kbd>z</kbd> <kbd>d</kbd></td><td>Zoom it; show or hide the detail pane.</td></tr>
+</table>
+
+<h2 id="layouts">Layouts</h2>
+<table>
+  <tr><th>Layout</th><th>Tiles</th></tr>
+  <tr><td><code>columns</code></td><td>Side by side.</td></tr>
+  <tr><td><code>rows</code></td><td>One above the other.</td></tr>
+  <tr><td><code>master</code></td><td>The first pane large on the left, the others stacked on the right.</td></tr>
+  <tr><td><code>grid</code></td><td>As square a grid as the count allows.</td></tr>
+</table>
+
+<h2 id="the-file">The file</h2>
+<div class="code"><div class="cap">~/.config/aki/spaces.toml</div><pre>[[spaces]]
+name = "Work"
+scope = "source:gitlab,jira"
+layout = "master"
+
+[[spaces.panes]]
+filter = "is:todo"
+group = "repo"
+sort = "waiting"
+
+[[spaces.panes]]
+filter = "is:waiting"
+group = "repo"
+sort = "urgency"
+
+[[spaces.panes]]
+title = "My drafts"
+filter = "is:draft role:author"
+group = "repo"
+sort = "urgency"</pre></div>
+<table>
+  <tr><th>Key</th><th>Values</th></tr>
+  <tr><td><code>scope</code>, <code>filter</code></td><td>A <a href="filters.html">filter</a>. Empty: everything.</td></tr>
+  <tr><td><code>layout</code></td><td><code>columns</code>, <code>rows</code>, <code>master</code>, <code>grid</code></td></tr>
+  <tr><td><code>group</code></td><td><code>none</code>, <code>repo</code>, <code>kind</code>, <code>source</code>, <code>person</code>, <code>role</code></td></tr>
+  <tr><td><code>sort</code></td><td><code>urgency</code>, <code>rule</code>, <code>waiting</code>, <code>updated</code>, <code>created</code>; <code>reverse = true</code> flips it</td></tr>
+  <tr><td><code>title</code></td><td>The pane's name. Without it, the pane is named after its filter.</td></tr>
+</table>
+
+<h2 id="a-pane-for-your-drafts">A pane for your drafts</h2>
+<p>To work on your drafts in their own pane and keep them out of <strong>To do</strong>:</p>
+<div class="code"><div class="cap">~/.config/aki/config.toml</div><pre>[drafts]
+mine = "apart"</pre></div>
+<p>Then, in the board: <kbd>n</kbd> for a new pane, type <code>is:draft role:author</code>, <kbd>Enter</kbd>, and <kbd>e</kbd> to name it. Drafts kept apart show only in panes that ask for <code>is:draft</code>; the top bar says how many there are.</p>
+
+<h2 id="start-over">Start over</h2>
+<div class="code"><pre>aki spaces reset</pre></div>
+<p>This writes the starting spaces again from your sources. The previous file is kept beside it as <code>spaces.toml.bak</code>.</p><div class="pn"><a href="urgency.html"><small>Previous</small>Urgency</a><a class="next" href="filters.html"><small>Next</small>Filters</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#how-spaces-are-made">How spaces are made</a><a href="#see-what-a-space-holds">See what a space holds</a><a href="#work-on-spaces">Work on spaces</a><a href="#work-on-panes">Work on panes</a><a href="#layouts">Layouts</a><a href="#the-file">The file</a><a href="#a-pane-for-your-drafts">A pane for your drafts</a><a href="#start-over">Start over</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

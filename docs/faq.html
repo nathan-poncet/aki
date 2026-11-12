@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAQ · aki</title>
+<meta name="description" content="Short answers.">
+<meta property="og:title" content="FAQ · aki">
+<meta property="og:description" content="Short answers.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/faq.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html">Sources</a><a href="cli.html">Command line</a><a href="faq.html" aria-current="page">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">Reference</div><h1>FAQ</h1><p class="lead">Short answers.</p><h2 id="does-aki-change-anything-on-gitlab-github-or-jira">Does aki change anything on GitLab, GitHub or Jira?</h2>
+<p>No. It only reads. It has no action that approves, merges, comments, transitions or pushes. <kbd>Enter</kbd> opens the page in your browser; you act there.</p>
+
+<h2 id="where-does-my-data-go">Where does my data go?</h2>
+<p>Nowhere but your machine. aki talks to your own sources with your own tokens, and keeps a local cache of who spoke when. It has no server and no account. The cache holds neither the text of comments nor any token.</p>
+
+<h2 id="why-does-it-poll-instead-of-receiving-events">Why does it poll instead of receiving events?</h2>
+<p>None of the three services pushes events to a personal client. aki asks every 30 seconds and keeps it cheap: a few light requests, and discussions read again only when an item moved.</p>
+
+<h2 id="a-task-is-missing-why">A task is missing. Why?</h2>
+<ul>
+  <li>It asks nothing of you and you wait on nothing: an approved change of someone else's, for example.</li>
+  <li>It is set aside: look at a pane filtered on <code>is:snoozed</code>.</li>
+  <li>It is a draft of yours kept apart or ignored: see <a href="rules.html#drafts">Drafts</a>.</li>
+  <li>Its rule is turned off: <code>aki rules</code> shows which are on.</li>
+  <li>The space's scope or the pane's filter leaves it out: <kbd>I</kbd> shows both.</li>
+  <li>On GitLab, you only commented on it: see <a href="sources.html#known-limits">Known limits</a>.</li>
+</ul>
+
+<h2 id="why-is-this-task-above-that-one">Why is this task above that one?</h2>
+<p><kbd>i</kbd> on each: the window lays the <a href="urgency.html">urgency</a> out line by line. If the pane is not ordered by urgency, its title says by what.</p>
+
+<h2 id="how-do-i-keep-my-drafts-out-of-to-do">How do I keep my drafts out of "To do"?</h2>
+<p><code>mine = "apart"</code> under <code>[drafts]</code>, and a pane filtered on <code>is:draft role:author</code>. See <a href="spaces.html#a-pane-for-your-drafts">A pane for your drafts</a>.</p>
+
+<h2 id="can-i-use-two-accounts-of-the-same-service">Can I use two accounts of the same service?</h2>
+<p>Yes: declare two sources of that kind with different <code>name</code>, <code>host</code> or token. See <a href="sources.html#keys">Sources</a>.</p>
+
+<h2 id="does-it-work-with-a-self-hosted-gitlab-or-github-enterprise">Does it work with a self-hosted GitLab or GitHub Enterprise?</h2>
+<p>Set <code>host</code> on the source. Jira is Cloud only.</p>
+
+<h2 id="which-agent-does-a-open">Which agent does <kbd>a</kbd> open?</h2>
+<p>Claude Code by default. Any command works: set <code>command</code> under <code>[agent]</code>. See <a href="agents.html#set-it-up">Agents</a>.</p>
+
+<h2 id="can-i-use-it-without-a-terminal">Can I use it without a terminal?</h2>
+<p>Yes, through an assistant: <code>aki mcp</code> serves the board to Claude Desktop or any MCP client. See <a href="assistants.html">Assistants</a>. aki itself still has to be installed on the machine.</p>
+
+<h2 id="does-it-run-on-windows">Does it run on Windows?</h2>
+<p>It is developed and used on macOS. The Linux paths (notifications, sounds, opening links) are written but have not been tested yet. It has not been run on Windows.</p>
+
+<h2 id="what-does-the-name-mean">What does the name mean?</h2>
+<p><em>À qui ?</em> is French for "whose turn?".</p><div class="pn"><a href="cli.html"><small>Previous</small>Command line</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#does-aki-change-anything-on-gitlab-github-or-jira">Does aki change anything on GitLab, GitHub or Jira?</a><a href="#where-does-my-data-go">Where does my data go?</a><a href="#why-does-it-poll-instead-of-receiving-events">Why does it poll instead of receiving events?</a><a href="#a-task-is-missing-why">A task is missing. Why?</a><a href="#why-is-this-task-above-that-one">Why is this task above that one?</a><a href="#how-do-i-keep-my-drafts-out-of-to-do">How do I keep my drafts out of &quot;To do&quot;?</a><a href="#can-i-use-two-accounts-of-the-same-service">Can I use two accounts of the same service?</a><a href="#does-it-work-with-a-self-hosted-gitlab-or-github-enterprise">Does it work with a self-hosted GitLab or GitHub Enterprise?</a><a href="#which-agent-does-a-open">Which agent does a open?</a><a href="#can-i-use-it-without-a-terminal">Can I use it without a terminal?</a><a href="#does-it-run-on-windows">Does it run on Windows?</a><a href="#what-does-the-name-mean">What does the name mean?</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Filters · aki</title>
+<meta name="description" content="A filter is a short query. It is used for a pane&#x27;s filter, a space&#x27;s scope, and on the command line.">
+<meta property="og:title" content="Filters · aki">
+<meta property="og:description" content="A filter is a short query. It is used for a pane&#x27;s filter, a space&#x27;s scope, and on the command line.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/filters.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html" aria-current="page">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html">Sources</a><a href="cli.html">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">The board</div><h1>Filters</h1><p class="lead">A filter is a short query. It is used for a pane's filter, a space's scope, and on the command line.</p><div class="code"><div class="cap">an example</div><pre>is:todo source:gitlab repo:web,api -is:draft by:alex export</pre></div>
+<p>Terms are separated by spaces and must all hold. <code>key:a,b</code> holds when any value does. A leading <code>-</code> negates a term. A bare word is searched in the reference, the title, the repository and the person.</p>
+
+<h2 id="terms">Terms</h2>
+<table>
+  <tr><th>Term</th><th>Keeps</th></tr>
+  <tr><td><code>is:todo</code>, <code>is:waiting</code></td><td>One side of the board.</td></tr>
+  <tr><td><code>is:draft</code></td><td>Draft changes. The only way to see drafts <a href="rules.html#drafts">kept apart</a>.</td></tr>
+  <tr><td><code>is:snoozed</code></td><td>What you <a href="set-aside.html">set aside</a>, which nothing else shows.</td></tr>
+  <tr><td><code>source:gitlab,jira</code></td><td>Items from any of these sources, by the name you gave them.</td></tr>
+  <tr><td><code>repo:web</code></td><td>Repositories or projects whose path contains it.</td></tr>
+  <tr><td><code>kind:review</code></td><td>Tasks listed for a rule whose name contains it, looking at every reason. <code>aki rules</code> names the rules.</td></tr>
+  <tr><td><code>top:draft</code></td><td>The same, looking only at the most pressing reason.</td></tr>
+  <tr><td><code>role:author</code></td><td><code>author</code>, <code>reviewer</code>, <code>assignee</code>, <code>participant</code>.</td></tr>
+  <tr><td><code>by:alex</code></td><td>The person on the other side.</td></tr>
+  <tr><td><code>heat:hot,warm</code></td><td>Tasks marked hot or warm; <code>calm</code> for the others.</td></tr>
+  <tr><td><code>ticket:PROJ</code></td><td>Changes that name a ticket whose key contains it. <code>ticket:any</code>: any ticket.</td></tr>
+  <tr><td><code>priority:high,highest</code></td><td>Tickets of that priority, and the changes that name one.</td></tr>
+  <tr><td><code>agent:blocked</code></td><td>Tasks whose <a href="agents.html#what-the-agent-is-doing">agent</a> is <code>working</code>, <code>blocked</code>, <code>done</code>, <code>idle</code> or <code>open</code>. <code>agent:any</code>: has one.</td></tr>
+  <tr><td><code>export</code></td><td>A word in the reference, title, repository or person.</td></tr>
+  <tr><td><code>-term</code></td><td>Everything the term does not keep.</td></tr>
+</table>
+
+<h2 id="where-filters-are-used">Where filters are used</h2>
+<table>
+  <tr><th>Place</th><th>How</th></tr>
+  <tr><td>A pane</td><td><kbd>/</kbd> in the board. The pane narrows as you type; <kbd>Esc</kbd> puts the previous filter back.</td></tr>
+  <tr><td>A space's scope</td><td><kbd>S</kbd> in the board.</td></tr>
+  <tr><td>The command line</td><td><code>aki list --filter "repo:web kind:review"</code></td></tr>
+  <tr><td>The file</td><td><code>scope</code> and <code>filter</code> in <a href="spaces.html#the-file">spaces.toml</a>.</td></tr>
+  <tr><td>An assistant</td><td>The <code>filter</code> argument of <a href="assistants.html#tools">list_tasks</a>.</td></tr>
+</table>
+
+<h2 id="recipes">Recipes</h2>
+<table>
+  <tr><th>To see</th><th>Filter</th></tr>
+  <tr><td>Reviews and re-reviews to do</td><td><code>is:todo kind:review</code></td></tr>
+  <tr><td>Everything about one repository</td><td><code>repo:api</code></td></tr>
+  <tr><td>What cannot wait</td><td><code>is:todo heat:hot</code></td></tr>
+  <tr><td>Your drafts</td><td><code>is:draft role:author</code></td></tr>
+  <tr><td>Agents that wait for you</td><td><code>agent:blocked</code></td></tr>
+  <tr><td>Work tied to high-priority tickets</td><td><code>priority:high,highest</code></td></tr>
+  <tr><td>What you wait on from one person</td><td><code>is:waiting by:alex</code></td></tr>
+</table>
+<p>A filter that does not parse is refused with the reason: an unknown key, or a value the key does not take.</p><div class="pn"><a href="spaces.html"><small>Previous</small>Spaces and panes</a><a class="next" href="keys.html"><small>Next</small>Keys</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#terms">Terms</a><a href="#where-filters-are-used">Where filters are used</a><a href="#recipes">Recipes</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

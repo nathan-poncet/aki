@@ -1,0 +1,61 @@
+<!-- title: Urgency | lead: A score decides what comes first. It is the sum of three things, each shown on the board. -->
+<pre data-cap="the formula">urgency = (100 − rule priority) + waiting + ticket</pre>
+
+<h2>The three parts</h2>
+<table>
+  <tr><th>Part</th><th>Points</th><th>From</th></tr>
+  <tr><td>Rule</td><td>100 − priority</td><td>The <a href="rules.html">rule</a> that lists the task. A review to do (priority 10) gives 90; a draft to finish (priority 90) gives 10.</td></tr>
+  <tr><td>Waiting</td><td>3 per day, at most 60</td><td>The full days since the next step arrived: since the review was requested, since the oldest unanswered reply, since your last word when you wait on someone.</td></tr>
+  <tr><td>Ticket</td><td>+5, plus the priority</td><td>A change that names a ticket in its title or branch (<code>PROJ-12</code>) gets 5, plus the points of the ticket's priority when Jira can tell it. A ticket gets the points of its own priority.</td></tr>
+</table>
+<table>
+  <tr><th>Ticket priority</th><th>Points</th></tr>
+  <tr><td>Highest</td><td>+50</td></tr>
+  <tr><td>High</td><td>+30</td></tr>
+  <tr><td>Medium</td><td>+10</td></tr>
+  <tr><td>Low</td><td>0</td></tr>
+  <tr><td>Lowest</td><td>−10</td></tr>
+</table>
+
+<h2>An example</h2>
+<pre data-cap="i on a task">HOW ITS URGENCY ADDS UP
+rule          80  "Re-review" has priority 20 (0 first, 100 last): 100 − 20
+waiting      +15  5 days × 3 a day
+ticket       +35  tied to PROJ-440, "high" (+30), and +5 for naming a ticket
+urgency    = 130  hot: warm ▴ from 100, hot ▲ from 130</pre>
+
+<h2>Where the board shows it</h2>
+<ul>
+  <li>The detail pane sums it up: <code>urgency 130 = rule 80, waiting +15, PROJ-440 (high) +35</code>.</li>
+  <li>Panes ordered by urgency show the score on every line.</li>
+  <li><kbd>i</kbd> on a task lays it out line by line, with your own weights.</li>
+  <li><code>▴</code> marks a task from 100 points (warm), <code>▲</code> from 130 (hot). The filter <code>heat:hot,warm</code> keeps them.</li>
+</ul>
+
+<h2>Orders</h2>
+<p>Panes list the most urgent first by default. <kbd>s</kbd> changes a pane's order and <kbd>v</kbd> reverses it.</p>
+<table>
+  <tr><th>Order</th><th>First</th></tr>
+  <tr><td><code>urgency</code></td><td>The highest score; among equals, the one that has waited longest.</td></tr>
+  <tr><td><code>rule</code></td><td>The rules' own order; among equals, the freshest.</td></tr>
+  <tr><td><code>waiting</code></td><td>What has waited longest.</td></tr>
+  <tr><td><code>updated</code></td><td>What moved most recently.</td></tr>
+  <tr><td><code>created</code></td><td>What was opened first.</td></tr>
+</table>
+
+<h2>Change the weights</h2>
+<pre data-cap="~/.config/aki/config.toml">[urgency]
+per_day = 3
+waiting_cap = 60
+linked = 5
+highest = 50
+high = 30
+medium = 10
+low = 0
+lowest = -10
+warm = 100
+hot = 130</pre>
+<p>The rule's part follows the rule's priority: change it under <code>[rules.&lt;name&gt;]</code>. <code>aki rules</code> prints the weights in use.</p>
+
+<h2>How a change is tied to a ticket</h2>
+<p>By a key in its title or branch name, such as <code>PROJ-12</code>. With a Jira source configured, the key is looked up, even for tickets that are not yours, and its priority counts. Without one, anything shaped like a key counts as a ticket and gets the 5 points.</p>

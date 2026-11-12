@@ -1,0 +1,69 @@
+<!-- title: Sources | lead: Where aki reads from: GitLab, GitHub and Jira Cloud. -->
+<h2>Without configuration</h2>
+<p>aki uses gitlab.com when <code>glab</code> is installed and github.com when <code>gh</code> is, with their own logins. Nothing to write.</p>
+<pre>aki doctor</pre>
+<p>It checks every source and prints who you are signed in as.</p>
+
+<h2>Declare your sources</h2>
+<p>Declaring <code>[[sources]]</code> replaces the detection: list every source you want.</p>
+
+<h3>GitLab</h3>
+<pre>[[sources]]
+kind = "gitlab"
+host = "gitlab.acme.io"</pre>
+<p><code>host</code> defaults to <code>gitlab.com</code>. The token comes from <code>$GITLAB_TOKEN</code> when set, else from <code>glab config get token</code>. When the token is refused, aki has <code>glab</code> renew it and tries again.</p>
+
+<h3>GitHub</h3>
+<pre>[[sources]]
+kind = "github"</pre>
+<p><code>host</code> defaults to <code>github.com</code>. The token comes from <code>$GITHUB_TOKEN</code> when set, else from <code>gh auth token</code>.</p>
+
+<h3>Jira</h3>
+<pre>[[sources]]
+kind = "jira"
+site = "https://your-company.atlassian.net"
+email = "you@your-company.com"
+token_env = "JIRA_API_TOKEN"</pre>
+<p>Jira Cloud, with an <a href="https://id.atlassian.com/manage-profile/security/api-tokens">API token</a>. <code>jql</code> changes which tickets are yours; the default is:</p>
+<pre>jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"</pre>
+
+<h2>Keys</h2>
+<table>
+  <tr><th>Key</th><th>Meaning</th></tr>
+  <tr><td><code>kind</code></td><td><code>gitlab</code>, <code>github</code> or <code>jira</code>.</td></tr>
+  <tr><td><code>name</code></td><td>Shown on the board and used by <code>source:</code> filters. Defaults to the kind. Two sources of the same kind need different names.</td></tr>
+  <tr><td><code>host</code></td><td>GitLab and GitHub: the instance.</td></tr>
+  <tr><td><code>site</code>, <code>email</code>, <code>jql</code></td><td>Jira: the site, your account, the query.</td></tr>
+  <tr><td><code>token_env</code></td><td>An environment variable holding the token.</td></tr>
+  <tr><td><code>token_command</code></td><td>A command that prints the token, for a keychain or a password manager.</td></tr>
+  <tr><td><code>token_renew_command</code></td><td>A command run when the token is refused, before trying again.</td></tr>
+</table>
+<pre data-cap="a token from the macOS keychain">token_command = "security find-generic-password -s aki-jira -w"</pre>
+<p>Tokens are read from the environment or a command each time. aki never stores one.</p>
+
+<h2>What is read</h2>
+<table>
+  <tr><th>Source</th><th>Items</th></tr>
+  <tr><td>GitLab</td><td>Open merge requests you wrote, review or are assigned to, with their threads, approvals, pipeline and branch state; issues assigned to you.</td></tr>
+  <tr><td>GitHub</td><td>Open pull requests you are involved in (author, assignee, commenter, mentioned), are asked to review or have reviewed, with their review threads, reviews and checks; issues assigned to you.</td></tr>
+  <tr><td>Jira</td><td>The tickets your query returns, with status, priority, blocking links and mentions; and the priority of tickets your changes name.</td></tr>
+</table>
+
+<h2>The cache</h2>
+<p>Everything read is kept in one SQLite file, <code>~/.cache/aki/cache.db</code>.</p>
+<ul>
+  <li>The board opens at once on what was known last time, then refreshes.</li>
+  <li>A source that is down still shows what it said last, marked as such.</li>
+  <li>Discussions are read again only when the item moved; a ticket looked up for its priority is trusted for half an hour. A refresh is a handful of light requests.</li>
+  <li>It holds who spoke when and where. It holds neither what was said nor any token.</li>
+</ul>
+<pre>aki cache path
+aki cache clear</pre>
+
+<h2>Known limits</h2>
+<ul>
+  <li>GitLab: merge requests where you only commented, without being author, assignee or reviewer, are not listed.</li>
+  <li>GitLab tells its history in English system notes; pushes and re-requests are read from those.</li>
+  <li>GitHub says a branch is behind its target only where the branch must be up to date to merge.</li>
+  <li>Jira: Cloud only. "Flagged" is not read; use <code>waiting_statuses</code> or "is blocked by" links.</li>
+</ul>

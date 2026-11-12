@@ -1,0 +1,38 @@
+<!-- title: Set aside, be told | lead: Hide a task until it matters again, and hear about what becomes yours. -->
+<h2>Set a task aside</h2>
+<p><kbd>p</kbd> on a task, then for how long:</p>
+<table>
+  <tr><th>Key</th><th>Until</th></tr>
+  <tr><td><kbd>t</kbd></td><td>Tomorrow.</td></tr>
+  <tr><td><kbd>w</kbd></td><td>In a week.</td></tr>
+  <tr><td><kbd>1</kbd>-<kbd>9</kbd></td><td>In that many days.</td></tr>
+  <tr><td><kbd>m</kbd></td><td>Something happens on it: a comment, a push, a status change.</td></tr>
+</table>
+<p>The task leaves the panes, the counts and the notifications. It is still true; it comes back by itself. The top bar says how many tasks are aside.</p>
+
+<h2>See them, bring one back</h2>
+<p>A pane filtered on <code>is:snoozed</code> lists what is aside. <kbd>p</kbd> on a task there brings it back.</p>
+<pre>aki list --filter is:snoozed</pre>
+<p>What you set aside is kept in <code>~/.local/state/aki/snoozed.json</code>.</p>
+
+<h2>Notifications</h2>
+<p>While the board is open, a task that starts asking something of you is announced: a desktop notification says what, once per refresh. A task that comes back from being set aside is not announced, nor is a source coming back after a failure.</p>
+<pre data-cap="~/.config/aki/config.toml">notifications = true</pre>
+
+<h2>Sounds</h2>
+<p>Something new to do also rings, once per refresh, with the sound of the most pressing new task.</p>
+<pre>[sounds]
+enabled = true
+new_task = "Glass"
+
+[sounds.rules]
+review_requested = "Ping"
+draft_to_finish = "none"</pre>
+<table>
+  <tr><th>Key</th><th>Value</th></tr>
+  <tr><td><code>new_task</code></td><td>A system sound by name, or a file: <code>"~/sounds/ding.wav"</code>. The default is <code>Glass</code> on macOS and <code>message-new-instant</code> elsewhere.</td></tr>
+  <tr><td><code>[sounds.rules]</code></td><td>A sound of its own for a <a href="rules.html">rule</a>. <code>"none"</code> keeps it quiet.</td></tr>
+</table>
+<pre>aki sounds
+aki sounds Glass</pre>
+<p>The first lists the sounds that can be named; the second plays one.</p>

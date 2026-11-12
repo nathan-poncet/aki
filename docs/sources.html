@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sources · aki</title>
+<meta name="description" content="Where aki reads from: GitLab, GitHub and Jira Cloud.">
+<meta property="og:title" content="Sources · aki">
+<meta property="og:description" content="Where aki reads from: GitLab, GitHub and Jira Cloud.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/sources.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html" aria-current="page">Sources</a><a href="cli.html">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">Reference</div><h1>Sources</h1><p class="lead">Where aki reads from: GitLab, GitHub and Jira Cloud.</p><h2 id="without-configuration">Without configuration</h2>
+<p>aki uses gitlab.com when <code>glab</code> is installed and github.com when <code>gh</code> is, with their own logins. Nothing to write.</p>
+<div class="code"><pre>aki doctor</pre></div>
+<p>It checks every source and prints who you are signed in as.</p>
+
+<h2 id="declare-your-sources">Declare your sources</h2>
+<p>Declaring <code>[[sources]]</code> replaces the detection: list every source you want.</p>
+
+<h3 id="gitlab">GitLab</h3>
+<div class="code"><pre>[[sources]]
+kind = "gitlab"
+host = "gitlab.acme.io"</pre></div>
+<p><code>host</code> defaults to <code>gitlab.com</code>. The token comes from <code>$GITLAB_TOKEN</code> when set, else from <code>glab config get token</code>. When the token is refused, aki has <code>glab</code> renew it and tries again.</p>
+
+<h3 id="github">GitHub</h3>
+<div class="code"><pre>[[sources]]
+kind = "github"</pre></div>
+<p><code>host</code> defaults to <code>github.com</code>. The token comes from <code>$GITHUB_TOKEN</code> when set, else from <code>gh auth token</code>.</p>
+
+<h3 id="jira">Jira</h3>
+<div class="code"><pre>[[sources]]
+kind = "jira"
+site = "https://your-company.atlassian.net"
+email = "you@your-company.com"
+token_env = "JIRA_API_TOKEN"</pre></div>
+<p>Jira Cloud, with an <a href="https://id.atlassian.com/manage-profile/security/api-tokens">API token</a>. <code>jql</code> changes which tickets are yours; the default is:</p>
+<div class="code"><pre>jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"</pre></div>
+
+<h2 id="keys">Keys</h2>
+<table>
+  <tr><th>Key</th><th>Meaning</th></tr>
+  <tr><td><code>kind</code></td><td><code>gitlab</code>, <code>github</code> or <code>jira</code>.</td></tr>
+  <tr><td><code>name</code></td><td>Shown on the board and used by <code>source:</code> filters. Defaults to the kind. Two sources of the same kind need different names.</td></tr>
+  <tr><td><code>host</code></td><td>GitLab and GitHub: the instance.</td></tr>
+  <tr><td><code>site</code>, <code>email</code>, <code>jql</code></td><td>Jira: the site, your account, the query.</td></tr>
+  <tr><td><code>token_env</code></td><td>An environment variable holding the token.</td></tr>
+  <tr><td><code>token_command</code></td><td>A command that prints the token, for a keychain or a password manager.</td></tr>
+  <tr><td><code>token_renew_command</code></td><td>A command run when the token is refused, before trying again.</td></tr>
+</table>
+<div class="code"><div class="cap">a token from the macOS keychain</div><pre>token_command = "security find-generic-password -s aki-jira -w"</pre></div>
+<p>Tokens are read from the environment or a command each time. aki never stores one.</p>
+
+<h2 id="what-is-read">What is read</h2>
+<table>
+  <tr><th>Source</th><th>Items</th></tr>
+  <tr><td>GitLab</td><td>Open merge requests you wrote, review or are assigned to, with their threads, approvals, pipeline and branch state; issues assigned to you.</td></tr>
+  <tr><td>GitHub</td><td>Open pull requests you are involved in (author, assignee, commenter, mentioned), are asked to review or have reviewed, with their review threads, reviews and checks; issues assigned to you.</td></tr>
+  <tr><td>Jira</td><td>The tickets your query returns, with status, priority, blocking links and mentions; and the priority of tickets your changes name.</td></tr>
+</table>
+
+<h2 id="the-cache">The cache</h2>
+<p>Everything read is kept in one SQLite file, <code>~/.cache/aki/cache.db</code>.</p>
+<ul>
+  <li>The board opens at once on what was known last time, then refreshes.</li>
+  <li>A source that is down still shows what it said last, marked as such.</li>
+  <li>Discussions are read again only when the item moved; a ticket looked up for its priority is trusted for half an hour. A refresh is a handful of light requests.</li>
+  <li>It holds who spoke when and where. It holds neither what was said nor any token.</li>
+</ul>
+<div class="code"><pre>aki cache path
+aki cache clear</pre></div>
+
+<h2 id="known-limits">Known limits</h2>
+<ul>
+  <li>GitLab: merge requests where you only commented, without being author, assignee or reviewer, are not listed.</li>
+  <li>GitLab tells its history in English system notes; pushes and re-requests are read from those.</li>
+  <li>GitHub says a branch is behind its target only where the branch must be up to date to merge.</li>
+  <li>Jira: Cloud only. "Flagged" is not read; use <code>waiting_statuses</code> or "is blocked by" links.</li>
+</ul><div class="pn"><a href="configuration.html"><small>Previous</small>Configuration</a><a class="next" href="cli.html"><small>Next</small>Command line</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#without-configuration">Without configuration</a><a href="#declare-your-sources">Declare your sources</a><a href="#gitlab" class="sub">GitLab</a><a href="#github" class="sub">GitHub</a><a href="#jira" class="sub">Jira</a><a href="#keys">Keys</a><a href="#what-is-read">What is read</a><a href="#the-cache">The cache</a><a href="#known-limits">Known limits</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

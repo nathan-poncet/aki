@@ -1,0 +1,108 @@
+<!-- title: Configuration | lead: One TOML file. Every setting has a default; write only what you change. -->
+<pre>aki config init</pre>
+<p>This writes <code>~/.config/aki/config.toml</code> with every setting at its default and a comment on each. <code>aki config path</code> prints where the file is. Unknown keys and names are errors.</p>
+
+<h2>Files</h2>
+<table>
+  <tr><th>File</th><th>Holds</th></tr>
+  <tr><td><code>~/.config/aki/config.toml</code></td><td>The settings on this page. <code>$AKI_CONFIG</code> names another file; <code>$XDG_CONFIG_HOME</code> is honored.</td></tr>
+  <tr><td><code>~/.config/aki/spaces.toml</code></td><td>Your <a href="spaces.html">spaces</a>, rewritten when you rearrange the board.</td></tr>
+  <tr><td><code>~/.cache/aki/cache.db</code></td><td>What was read from the sources (SQLite). <code>$XDG_CACHE_HOME</code> is honored.</td></tr>
+  <tr><td><code>~/.local/state/aki/snoozed.json</code></td><td>What you set aside. <code>$XDG_STATE_HOME</code> is honored.</td></tr>
+</table>
+
+<h2>General</h2>
+<pre>refresh_seconds = 30
+notifications = true
+cache_seconds = 60</pre>
+<table>
+  <tr><th>Key</th><th>Meaning</th></tr>
+  <tr><td><code>refresh_seconds</code></td><td>How often the board looks again. Minimum 5.</td></tr>
+  <tr><td><code>notifications</code></td><td>A desktop notification when something new becomes yours.</td></tr>
+  <tr><td><code>cache_seconds</code></td><td><code>aki list</code> reuses a reading younger than this. <code>0</code>: always ask.</td></tr>
+</table>
+
+<h2>Sources</h2>
+<pre>[[sources]]
+kind = "gitlab"
+
+[[sources]]
+kind = "github"
+
+[[sources]]
+kind = "jira"
+site = "https://your-company.atlassian.net"
+email = "you@your-company.com"
+token_env = "JIRA_API_TOKEN"</pre>
+<p>Every key is on <a href="sources.html">Sources</a>.</p>
+
+<h2>Rules</h2>
+<pre>[threads]
+who_resolves = "reviewer"
+ignore_bots = true
+
+[drafts]
+mine = "todo"
+others = "wait"
+
+[re_review]
+triggers = ["author_replied", "new_commits", "re_requested", "approval_reset"]
+after_approval = false
+
+[tickets]
+waiting_statuses = ["blocked", "on hold", "in review", "waiting"]
+
+[nudge]
+after_days = 0
+
+[rules.checks_running]
+bucket = "todo"
+priority = 45</pre>
+<p>Every key is on <a href="rules.html">Rules</a>.</p>
+
+<h2>Urgency</h2>
+<pre>[urgency]
+per_day = 3
+waiting_cap = 60
+linked = 5
+highest = 50
+high = 30
+medium = 10
+low = 0
+lowest = -10
+warm = 100
+hot = 130</pre>
+<p>Every key is on <a href="urgency.html#change-the-weights">Urgency</a>.</p>
+
+<h2>Agent</h2>
+<pre>[agent]
+command = "claude {prompt}"
+instructions = ""
+launcher = "auto"
+chat_url = "https://claude.ai/new?q={prompt}"
+workspace = "{repo}"
+tab = "{ticket} {ref}"
+focus = true
+# terminal = ["alacritty", "--title", "{title}", "-e", "{command}"]
+# herdr_session = "work"
+# roots = ["~/code"]
+
+# [agent.repos]
+# "group/project" = "~/elsewhere/project"</pre>
+<p>Every key is on <a href="agents.html">Agents</a>.</p>
+
+<h2>Sounds</h2>
+<pre>[sounds]
+enabled = true
+# new_task = "Glass"
+
+# [sounds.rules]
+# review_requested = "Ping"</pre>
+<p>Every key is on <a href="set-aside.html#sounds">Set aside, be told</a>.</p>
+
+<h2>Assistants</h2>
+<pre>[mcp]
+enabled = true
+set_aside = true
+start_agent = true</pre>
+<p>Every key is on <a href="assistants.html#what-it-may-do">Assistants</a>.</p>

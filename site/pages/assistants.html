@@ -1,0 +1,56 @@
+<!-- title: Assistants | lead: aki serves the board to an assistant over the Model Context Protocol, for whoever would rather ask than open a terminal. -->
+<p>Once plugged in, the assistant can be asked: what waits on me, why is this one first, set that one aside until Monday, start on the review of <code>web!916</code>.</p>
+
+<h2>Plug it in</h2>
+<pre>aki mcp setup</pre>
+<p>This prints the block below with the full path of your <code>aki</code>.</p>
+<div class="tabs">
+  <section data-tab="Claude Desktop">
+    <p>Settings › Developer › Edit Config, add this to <code>claude_desktop_config.json</code>, and restart the app:</p>
+    <pre>{
+  "mcpServers": {
+    "aki": { "command": "/Users/you/.cargo/bin/aki", "args": ["mcp"] }
+  }
+}</pre>
+  </section>
+  <section data-tab="Claude Code">
+    <pre>claude mcp add aki -- aki mcp</pre>
+  </section>
+  <section data-tab="Another client">
+    <p>Any MCP client that starts a server on standard input and output: the command is <code>aki mcp</code>.</p>
+  </section>
+</div>
+<p>aki must be installed and its <a href="sources.html">sources</a> signed in on the same machine. An app started outside a shell passes a short <code>PATH</code>; aki adds <code>/opt/homebrew/bin</code>, <code>/usr/local/bin</code>, <code>~/.local/bin</code> and <code>~/.cargo/bin</code> so that <code>glab</code> and <code>gh</code> are found.</p>
+
+<h2>Tools</h2>
+<table>
+  <tr><th>Tool</th><th>Does</th><th>Arguments</th></tr>
+  <tr><td><code>list_tasks</code></td><td>The board, most urgent first. Every task says why it is listed and how its score is made.</td><td><code>side</code>, <code>space</code>, <code>filter</code>, <code>sort</code>, <code>limit</code></td></tr>
+  <tr><td><code>get_task</code></td><td>One task in full: its reasons, its urgency line by line, its links, and the brief of what is expected.</td><td><code>reference</code></td></tr>
+  <tr><td><code>list_spaces</code></td><td>Your spaces, their panes, the repositories they hold.</td><td></td></tr>
+  <tr><td><code>explain_rules</code></td><td>Every rule as configured, and how urgency is computed.</td><td></td></tr>
+  <tr><td><code>set_aside</code></td><td>Hide a task for a number of days, or until it moves.</td><td><code>reference</code>, <code>days</code></td></tr>
+  <tr><td><code>bring_back</code></td><td>Put a task that was set aside back on the board.</td><td><code>reference</code></td></tr>
+  <tr><td><code>start_agent</code></td><td>Open your agent on a task, through the <a href="agents.html#where-it-opens">launcher</a> you chose.</td><td><code>reference</code></td></tr>
+</table>
+<p>A <code>reference</code> is what the board shows: <code>web!916</code>, <code>notes#12</code>, <code>PROJ-7</code>, a ticket key, or the URL. <code>filter</code> takes the same <a href="filters.html">queries</a> as a pane.</p>
+
+<h2>What it may do</h2>
+<p>Reading the board is always allowed. The rest is yours to say:</p>
+<pre data-cap="~/.config/aki/config.toml">[mcp]
+enabled = true
+set_aside = true
+start_agent = true</pre>
+<table>
+  <tr><th>Key</th><th>When false</th></tr>
+  <tr><td><code>enabled</code></td><td><code>aki mcp</code> refuses to start.</td></tr>
+  <tr><td><code>set_aside</code></td><td><code>set_aside</code> and <code>bring_back</code> are neither offered nor done.</td></tr>
+  <tr><td><code>start_agent</code></td><td><code>start_agent</code> is neither offered nor done.</td></tr>
+</table>
+<p>No tool approves, merges, comments or pushes: aki has no such action.</p>
+
+<h2>Starting work from a conversation</h2>
+<p>Without a terminal, <code>start_agent</code> opens a new Claude conversation on the task's brief:</p>
+<pre>[agent]
+launcher = "claude"</pre>
+<p>With <code>launcher = "auto"</code>, this is also what happens when aki finds neither Herdr nor a terminal. To work on the task in the conversation at hand instead, ask for the task: <code>get_task</code> returns the same brief.</p>

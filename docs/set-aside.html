@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set aside, be told · aki</title>
+<meta name="description" content="Hide a task until it matters again, and hear about what becomes yours.">
+<meta property="og:title" content="Set aside, be told · aki">
+<meta property="og:description" content="Hide a task until it matters again, and hear about what becomes yours.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nathan-poncet.github.io/aki/set-aside.html">
+<meta property="og:image" content="https://nathan-poncet.github.io/aki/media/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="media/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="media/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="media/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("aki-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="index.html" aria-label="aki, home"><span class="badge"><span class="eyes"><i><b></b></i><i><b></b></i></span></span>aki</a><nav class="nav" aria-label="Site"><a href="install.html" aria-current="page">Docs</a><a href="quick-start.html" class="hide-s">Quick start</a><a href="faq.html" class="hide-s">FAQ</a><a class="gh" href="https://github.com/nathan-poncet/aki">GitHub</a><button class="theme" type="button" aria-label="Switch between dark and light"><svg class="moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.2 1.5a6.5 6.5 0 1 0 8.3 8.3A5.4 5.4 0 0 1 6.2 1.5z"/></svg><svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.2 1.2M11.8 11.8 13 13M3 13l1.2-1.2M11.8 4.2 13 3"/></svg></button><button class="menu" type="button" aria-label="Documentation menu">≡</button></nav></div></header>
+<div class="docs">
+<nav class="side" aria-label="Documentation"><div class="search"><input type="search" placeholder="Search the docs" aria-label="Search the documentation" autocomplete="off"><kbd>/</kbd><div class="results" role="listbox"></div></div><h4>Start</h4><a href="install.html">Install</a><a href="quick-start.html">Quick start</a><h4>The board</h4><a href="rules.html">Rules</a><a href="urgency.html">Urgency</a><a href="spaces.html">Spaces and panes</a><a href="filters.html">Filters</a><a href="keys.html">Keys</a><h4>Working from it</h4><a href="agents.html">Agents</a><a href="assistants.html">Assistants</a><a href="set-aside.html" aria-current="page">Set aside, be told</a><h4>Reference</h4><a href="configuration.html">Configuration</a><a href="sources.html">Sources</a><a href="cli.html">Command line</a><a href="faq.html">FAQ</a></nav>
+<main class="doc"><article><div class="crumb">Working from it</div><h1>Set aside, be told</h1><p class="lead">Hide a task until it matters again, and hear about what becomes yours.</p><h2 id="set-a-task-aside">Set a task aside</h2>
+<p><kbd>p</kbd> on a task, then for how long:</p>
+<table>
+  <tr><th>Key</th><th>Until</th></tr>
+  <tr><td><kbd>t</kbd></td><td>Tomorrow.</td></tr>
+  <tr><td><kbd>w</kbd></td><td>In a week.</td></tr>
+  <tr><td><kbd>1</kbd>-<kbd>9</kbd></td><td>In that many days.</td></tr>
+  <tr><td><kbd>m</kbd></td><td>Something happens on it: a comment, a push, a status change.</td></tr>
+</table>
+<p>The task leaves the panes, the counts and the notifications. It is still true; it comes back by itself. The top bar says how many tasks are aside.</p>
+
+<h2 id="see-them-bring-one-back">See them, bring one back</h2>
+<p>A pane filtered on <code>is:snoozed</code> lists what is aside. <kbd>p</kbd> on a task there brings it back.</p>
+<div class="code"><pre>aki list --filter is:snoozed</pre></div>
+<p>What you set aside is kept in <code>~/.local/state/aki/snoozed.json</code>.</p>
+
+<h2 id="notifications">Notifications</h2>
+<p>While the board is open, a task that starts asking something of you is announced: a desktop notification says what, once per refresh. A task that comes back from being set aside is not announced, nor is a source coming back after a failure.</p>
+<div class="code"><div class="cap">~/.config/aki/config.toml</div><pre>notifications = true</pre></div>
+
+<h2 id="sounds">Sounds</h2>
+<p>Something new to do also rings, once per refresh, with the sound of the most pressing new task.</p>
+<div class="code"><pre>[sounds]
+enabled = true
+new_task = "Glass"
+
+[sounds.rules]
+review_requested = "Ping"
+draft_to_finish = "none"</pre></div>
+<table>
+  <tr><th>Key</th><th>Value</th></tr>
+  <tr><td><code>new_task</code></td><td>A system sound by name, or a file: <code>"~/sounds/ding.wav"</code>. The default is <code>Glass</code> on macOS and <code>message-new-instant</code> elsewhere.</td></tr>
+  <tr><td><code>[sounds.rules]</code></td><td>A sound of its own for a <a href="rules.html">rule</a>. <code>"none"</code> keeps it quiet.</td></tr>
+</table>
+<div class="code"><pre>aki sounds
+aki sounds Glass</pre></div>
+<p>The first lists the sounds that can be named; the second plays one.</p><div class="pn"><a href="assistants.html"><small>Previous</small>Assistants</a><a class="next" href="configuration.html"><small>Next</small>Configuration</a></div></article></main>
+<aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#set-a-task-aside">Set a task aside</a><a href="#see-them-bring-one-back">See them, bring one back</a><a href="#notifications">Notifications</a><a href="#sounds">Sounds</a></aside></div>
+<script src="search-index.js"></script><script src="site.js"></script>
+</body></html>

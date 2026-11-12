@@ -1,0 +1,94 @@
+<!-- title: Spaces and panes | lead: A space keeps part of the board. Its panes are filtered, grouped and sorted views of it, tiled in a layout. -->
+<h2>How spaces are made</h2>
+<p>On a first run aki makes <strong>All</strong>, plus one space per source when there are several. From then on spaces are what you make them: every change in the board is saved at once to <code>~/.config/aki/spaces.toml</code>, which you can also edit by hand.</p>
+<p>A space has:</p>
+<ul>
+  <li>a <strong>scope</strong>: a <a href="filters.html">filter</a> saying what belongs to it at all;</li>
+  <li>a <strong>layout</strong>: how its panes are tiled;</li>
+  <li>one or more <strong>panes</strong>, each with its own filter, grouping and order.</li>
+</ul>
+
+<h2>See what a space holds</h2>
+<p><kbd>I</kbd> in the board explains the shown space: its scope, its layout, its panes, and the repositories and projects it holds right now with their counts.</p>
+<pre>aki spaces</pre>
+<pre data-cap="output">2 Work
+    scope   source:gitlab,jira
+    layout  master
+    pane 1  To do · filter: is:todo · group: repo · sort: waiting ↓
+    pane 2  Waiting · filter: is:waiting · group: repo · sort: urgency ↓
+    holds   gitlab · acme/api  (7 to do, 2 waiting)
+            gitlab · acme/web  (2 to do, 3 waiting)</pre>
+
+<h2>Work on spaces</h2>
+<table>
+  <tr><th>Key</th><th>Does</th></tr>
+  <tr><td><kbd>1</kbd>-<kbd>9</kbd>, <kbd>,</kbd> <kbd>.</kbd></td><td>Show a space, or click it in the top bar.</td></tr>
+  <tr><td><kbd>N</kbd></td><td>New space.</td></tr>
+  <tr><td><kbd>S</kbd></td><td>Its scope. <code>source:github</code> keeps one source, <code>repo:web</code> one repository, <code>-repo:legacy</code> leaves one out.</td></tr>
+  <tr><td><kbd>R</kbd> <kbd>X</kbd></td><td>Rename it, remove it.</td></tr>
+  <tr><td><kbd>t</kbd></td><td>Its layout: columns → rows → master → grid.</td></tr>
+  <tr><td><kbd>&lt;</kbd> <kbd>&gt;</kbd></td><td>Move it among the others.</td></tr>
+</table>
+
+<h2>Work on panes</h2>
+<table>
+  <tr><th>Key</th><th>Does</th></tr>
+  <tr><td><kbd>/</kbd></td><td>Filter the pane, applied as you type.</td></tr>
+  <tr><td><kbd>b</kbd></td><td>Its side: to do → waiting → both.</td></tr>
+  <tr><td><kbd>g</kbd></td><td>Its grouping: none → repo → kind → source → person → role.</td></tr>
+  <tr><td><kbd>s</kbd> <kbd>v</kbd></td><td>Its <a href="urgency.html#orders">order</a>, and the reverse.</td></tr>
+  <tr><td><kbd>n</kbd> <kbd>x</kbd></td><td>New pane beside this one, with the same view; close it.</td></tr>
+  <tr><td><kbd>Shift</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>Move it among the others.</td></tr>
+  <tr><td><kbd>m</kbd> then <kbd>1</kbd>-<kbd>9</kbd></td><td>Send it to another space.</td></tr>
+  <tr><td><kbd>e</kbd></td><td>Name it.</td></tr>
+  <tr><td><kbd>z</kbd> <kbd>d</kbd></td><td>Zoom it; show or hide the detail pane.</td></tr>
+</table>
+
+<h2>Layouts</h2>
+<table>
+  <tr><th>Layout</th><th>Tiles</th></tr>
+  <tr><td><code>columns</code></td><td>Side by side.</td></tr>
+  <tr><td><code>rows</code></td><td>One above the other.</td></tr>
+  <tr><td><code>master</code></td><td>The first pane large on the left, the others stacked on the right.</td></tr>
+  <tr><td><code>grid</code></td><td>As square a grid as the count allows.</td></tr>
+</table>
+
+<h2>The file</h2>
+<pre data-cap="~/.config/aki/spaces.toml">[[spaces]]
+name = "Work"
+scope = "source:gitlab,jira"
+layout = "master"
+
+[[spaces.panes]]
+filter = "is:todo"
+group = "repo"
+sort = "waiting"
+
+[[spaces.panes]]
+filter = "is:waiting"
+group = "repo"
+sort = "urgency"
+
+[[spaces.panes]]
+title = "My drafts"
+filter = "is:draft role:author"
+group = "repo"
+sort = "urgency"</pre>
+<table>
+  <tr><th>Key</th><th>Values</th></tr>
+  <tr><td><code>scope</code>, <code>filter</code></td><td>A <a href="filters.html">filter</a>. Empty: everything.</td></tr>
+  <tr><td><code>layout</code></td><td><code>columns</code>, <code>rows</code>, <code>master</code>, <code>grid</code></td></tr>
+  <tr><td><code>group</code></td><td><code>none</code>, <code>repo</code>, <code>kind</code>, <code>source</code>, <code>person</code>, <code>role</code></td></tr>
+  <tr><td><code>sort</code></td><td><code>urgency</code>, <code>rule</code>, <code>waiting</code>, <code>updated</code>, <code>created</code>; <code>reverse = true</code> flips it</td></tr>
+  <tr><td><code>title</code></td><td>The pane's name. Without it, the pane is named after its filter.</td></tr>
+</table>
+
+<h2>A pane for your drafts</h2>
+<p>To work on your drafts in their own pane and keep them out of <strong>To do</strong>:</p>
+<pre data-cap="~/.config/aki/config.toml">[drafts]
+mine = "apart"</pre>
+<p>Then, in the board: <kbd>n</kbd> for a new pane, type <code>is:draft role:author</code>, <kbd>Enter</kbd>, and <kbd>e</kbd> to name it. Drafts kept apart show only in panes that ask for <code>is:draft</code>; the top bar says how many there are.</p>
+
+<h2>Start over</h2>
+<pre>aki spaces reset</pre>
+<p>This writes the starting spaces again from your sources. The previous file is kept beside it as <code>spaces.toml.bak</code>.</p>

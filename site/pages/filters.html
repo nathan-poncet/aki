@@ -1,0 +1,46 @@
+<!-- title: Filters | lead: A filter is a short query. It is used for a pane's filter, a space's scope, and on the command line. -->
+<pre data-cap="an example">is:todo source:gitlab repo:web,api -is:draft by:alex export</pre>
+<p>Terms are separated by spaces and must all hold. <code>key:a,b</code> holds when any value does. A leading <code>-</code> negates a term. A bare word is searched in the reference, the title, the repository and the person.</p>
+
+<h2>Terms</h2>
+<table>
+  <tr><th>Term</th><th>Keeps</th></tr>
+  <tr><td><code>is:todo</code>, <code>is:waiting</code></td><td>One side of the board.</td></tr>
+  <tr><td><code>is:draft</code></td><td>Draft changes. The only way to see drafts <a href="rules.html#drafts">kept apart</a>.</td></tr>
+  <tr><td><code>is:snoozed</code></td><td>What you <a href="set-aside.html">set aside</a>, which nothing else shows.</td></tr>
+  <tr><td><code>source:gitlab,jira</code></td><td>Items from any of these sources, by the name you gave them.</td></tr>
+  <tr><td><code>repo:web</code></td><td>Repositories or projects whose path contains it.</td></tr>
+  <tr><td><code>kind:review</code></td><td>Tasks listed for a rule whose name contains it, looking at every reason. <code>aki rules</code> names the rules.</td></tr>
+  <tr><td><code>top:draft</code></td><td>The same, looking only at the most pressing reason.</td></tr>
+  <tr><td><code>role:author</code></td><td><code>author</code>, <code>reviewer</code>, <code>assignee</code>, <code>participant</code>.</td></tr>
+  <tr><td><code>by:alex</code></td><td>The person on the other side.</td></tr>
+  <tr><td><code>heat:hot,warm</code></td><td>Tasks marked hot or warm; <code>calm</code> for the others.</td></tr>
+  <tr><td><code>ticket:PROJ</code></td><td>Changes that name a ticket whose key contains it. <code>ticket:any</code>: any ticket.</td></tr>
+  <tr><td><code>priority:high,highest</code></td><td>Tickets of that priority, and the changes that name one.</td></tr>
+  <tr><td><code>agent:blocked</code></td><td>Tasks whose <a href="agents.html#what-the-agent-is-doing">agent</a> is <code>working</code>, <code>blocked</code>, <code>done</code>, <code>idle</code> or <code>open</code>. <code>agent:any</code>: has one.</td></tr>
+  <tr><td><code>export</code></td><td>A word in the reference, title, repository or person.</td></tr>
+  <tr><td><code>-term</code></td><td>Everything the term does not keep.</td></tr>
+</table>
+
+<h2>Where filters are used</h2>
+<table>
+  <tr><th>Place</th><th>How</th></tr>
+  <tr><td>A pane</td><td><kbd>/</kbd> in the board. The pane narrows as you type; <kbd>Esc</kbd> puts the previous filter back.</td></tr>
+  <tr><td>A space's scope</td><td><kbd>S</kbd> in the board.</td></tr>
+  <tr><td>The command line</td><td><code>aki list --filter "repo:web kind:review"</code></td></tr>
+  <tr><td>The file</td><td><code>scope</code> and <code>filter</code> in <a href="spaces.html#the-file">spaces.toml</a>.</td></tr>
+  <tr><td>An assistant</td><td>The <code>filter</code> argument of <a href="assistants.html#tools">list_tasks</a>.</td></tr>
+</table>
+
+<h2>Recipes</h2>
+<table>
+  <tr><th>To see</th><th>Filter</th></tr>
+  <tr><td>Reviews and re-reviews to do</td><td><code>is:todo kind:review</code></td></tr>
+  <tr><td>Everything about one repository</td><td><code>repo:api</code></td></tr>
+  <tr><td>What cannot wait</td><td><code>is:todo heat:hot</code></td></tr>
+  <tr><td>Your drafts</td><td><code>is:draft role:author</code></td></tr>
+  <tr><td>Agents that wait for you</td><td><code>agent:blocked</code></td></tr>
+  <tr><td>Work tied to high-priority tickets</td><td><code>priority:high,highest</code></td></tr>
+  <tr><td>What you wait on from one person</td><td><code>is:waiting by:alex</code></td></tr>
+</table>
+<p>A filter that does not parse is refused with the reason: an unknown key, or a value the key does not take.</p>

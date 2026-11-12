@@ -1,0 +1,46 @@
+<!-- title: Install | lead: One command builds aki and tells you what to sign in to. -->
+<pre>curl -fsSL https://nathan-poncet.github.io/aki/install.sh | sh</pre>
+<p>The script builds aki from its repository with Cargo and installs one program, <code>aki</code>, in <code>~/.cargo/bin</code>. It then tells you whether <code>glab</code> and <code>gh</code> are present. It installs nothing else and needs no administrator rights.</p>
+
+<h2>Requirements</h2>
+<ul>
+  <li>macOS or Linux.</li>
+  <li>The Rust toolchain (<code>cargo</code>). Without it the script stops and says so; <code>AKI_RUSTUP=1</code> lets it install the toolchain with rustup first.</li>
+  <li><code>git</code>.</li>
+  <li>For GitLab, the <a href="https://gitlab.com/gitlab-org/cli">glab</a> CLI; for GitHub, the <a href="https://cli.github.com">gh</a> CLI. aki uses their logins. A token in an environment variable works too: see <a href="sources.html">Sources</a>.</li>
+</ul>
+
+<h2>Other ways</h2>
+<div class="tabs">
+  <section data-tab="Cargo">
+    <pre>cargo install --locked --git https://github.com/nathan-poncet/aki</pre>
+  </section>
+  <section data-tab="From source">
+    <pre>git clone https://github.com/nathan-poncet/aki
+cd aki
+cargo install --path .</pre>
+  </section>
+  <section data-tab="A given version">
+    <pre>curl -fsSL https://nathan-poncet.github.io/aki/install.sh | AKI_REF=main sh</pre>
+    <p><code>AKI_REF</code> is a tag, a branch or a commit.</p>
+  </section>
+</div>
+
+<h2>Sign in</h2>
+<p>aki reads each service with the login of its own CLI. Sign in to the ones you use:</p>
+<pre>glab auth login</pre>
+<div class="or">or</div>
+<pre>gh auth login</pre>
+<p>Jira needs three lines of configuration: see <a href="sources.html#jira">Sources</a>.</p>
+
+<h2>Check</h2>
+<pre>aki doctor</pre>
+<p>It prints one line per source: who you are signed in as, or why the source cannot be read.</p>
+
+<h2>Update</h2>
+<p>Run the install command again. Cargo rebuilds only when the sources changed.</p>
+
+<h2>Uninstall</h2>
+<pre>cargo uninstall aki
+rm -rf ~/.config/aki ~/.cache/aki ~/.local/state/aki</pre>
+<p>The second line removes your configuration and spaces, the cache, and what you set aside.</p>

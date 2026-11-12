@@ -1,0 +1,99 @@
+<!-- title: Rules | lead: Every reason a task is on the board is a rule. Each rule can be turned off, moved to the other side, or reordered. -->
+<p>For each merge request, pull request and ticket you are involved in, aki looks at who spoke last in every thread, the state of reviews and approvals, the pipeline, the branch, and the ticket's status. Each fact that asks something of someone becomes a <strong>reason</strong>. A task is listed once, under its most pressing reason; the others show in the detail pane.</p>
+
+<h2>To do</h2>
+<p>The next step is yours.</p>
+<table>
+  <tr><th>Label</th><th>Rule</th><th>Priority</th><th>When</th></tr>
+  <tr><td>Review</td><td><code>review_requested</code></td><td>10</td><td>Your review is requested and you have not started.</td></tr>
+  <tr><td>Re-review</td><td><code>re_review</code></td><td>20</td><td>You reviewed, and since then something moved (see <a href="#re-reviews">Re-reviews</a>).</td></tr>
+  <tr><td>Reply</td><td><code>reply_needed</code></td><td>30</td><td>Someone waits for your answer in a thread, or mentioned you.</td></tr>
+  <tr><td>Mentioned</td><td><code>ticket_mentioned</code></td><td>35</td><td>Someone mentioned you on a ticket and you have not commented since.</td></tr>
+  <tr><td>Resolve threads</td><td><code>thread_to_resolve</code></td><td>40</td><td>A thread you opened was answered: check it and close it.</td></tr>
+  <tr><td>Fix checks</td><td><code>checks_failed</code></td><td>50</td><td>The pipeline of your change failed.</td></tr>
+  <tr><td>Fix conflicts</td><td><code>conflicts</code></td><td>55</td><td>Your change conflicts with its target branch.</td></tr>
+  <tr><td>Rebase</td><td><code>rebase</code></td><td>57</td><td>Your change is behind its target branch. Not shown when it already conflicts.</td></tr>
+  <tr><td>Merge</td><td><code>ready_to_merge</code></td><td>60</td><td>Your change is approved, green, with no open thread, and you can merge it.</td></tr>
+  <tr><td>Assigned</td><td><code>assigned</code></td><td>65</td><td>A change you neither wrote nor review is assigned to you.</td></tr>
+  <tr><td>Ask a review</td><td><code>no_reviewer</code></td><td>70</td><td>Your change is ready and nobody was asked to review it.</td></tr>
+  <tr><td>In progress</td><td><code>ticket_in_progress</code></td><td>75</td><td>A ticket of yours is in progress.</td></tr>
+  <tr><td>To do</td><td><code>ticket_todo</code></td><td>80</td><td>A ticket of yours is not started.</td></tr>
+  <tr><td>Nudge</td><td><code>nudge</code></td><td>85</td><td>A waiting item has not moved for a number of days (off by default, see <a href="#nudge">Nudge</a>).</td></tr>
+  <tr><td>Finish draft</td><td><code>draft_to_finish</code></td><td>90</td><td>Your change is still a draft.</td></tr>
+</table>
+
+<h2>Waiting</h2>
+<p>You cannot move it further: someone or something else has the next step.</p>
+<table>
+  <tr><th>Label</th><th>Rule</th><th>Priority</th><th>When</th></tr>
+  <tr><td>Awaiting review</td><td><code>awaiting_review</code></td><td>10</td><td>Your change waits for reviewers. The detail names who has not looked.</td></tr>
+  <tr><td>Awaiting author</td><td><code>awaiting_author</code></td><td>20</td><td>You reviewed; nothing new since.</td></tr>
+  <tr><td>Awaiting reply</td><td><code>awaiting_reply</code></td><td>30</td><td>You answered; the other side has to close the thread.</td></tr>
+  <tr><td>Checks running</td><td><code>checks_running</code></td><td>40</td><td>The pipeline of your change is running.</td></tr>
+  <tr><td>Blocked</td><td><code>ticket_blocked</code></td><td>50</td><td>A ticket of yours is blocked by another, or in a waiting status.</td></tr>
+  <tr><td>Draft</td><td><code>draft_by_other</code></td><td>60</td><td>A change you review is still a draft.</td></tr>
+</table>
+<p>One reason to do is enough to put the whole task in <strong>To do</strong>.</p>
+
+<h2>Change a rule</h2>
+<p>Any rule takes three settings. A lower priority comes first.</p>
+<pre data-cap="~/.config/aki/config.toml">[rules.draft_to_finish]
+enabled = false
+
+[rules.checks_running]
+bucket = "todo"
+priority = 45</pre>
+<p><code>aki rules</code> prints every rule as it applies. An unknown rule name is an error, so a typo never silently disables a rule.</p>
+
+<h2>Threads</h2>
+<p>Teams differ on who closes a review thread once it is answered.</p>
+<pre>[threads]
+who_resolves = "reviewer"
+ignore_bots = true</pre>
+<table>
+  <tr><th>Value</th><th>Effect</th></tr>
+  <tr><td><code>"reviewer"</code></td><td>Whoever opened the thread checks the answer and resolves it. An answered thread you opened is <em>Resolve threads</em>; one you answered is <em>Awaiting reply</em>.</td></tr>
+  <tr><td><code>"author"</code></td><td>The author resolves threads once addressed.</td></tr>
+  <tr><td><code>"anyone"</code></td><td>No convention: only who spoke last counts.</td></tr>
+</table>
+<p>With <code>ignore_bots</code>, a bot's comment never gives anyone the next step.</p>
+
+<h2>Re-reviews</h2>
+<p>After your first review, any of these triggers makes a re-review due:</p>
+<pre>[re_review]
+triggers = ["author_replied", "new_commits", "re_requested", "approval_reset"]
+after_approval = false</pre>
+<table>
+  <tr><th>Trigger</th><th>Fires when</th></tr>
+  <tr><td><code>author_replied</code></td><td>Someone answered in a thread you take part in.</td></tr>
+  <tr><td><code>new_commits</code></td><td>Commits were pushed after your last review activity.</td></tr>
+  <tr><td><code>re_requested</code></td><td>Your review was requested again.</td></tr>
+  <tr><td><code>approval_reset</code></td><td>Your approval was reset or dismissed.</td></tr>
+  <tr><td><code>all_threads_answered</code></td><td>Every thread you opened has been answered or resolved. Not in the default list.</td></tr>
+</table>
+<p><code>after_approval = true</code> lets a re-review be due on a change you already approved.</p>
+
+<h2>Drafts</h2>
+<pre>[drafts]
+mine = "todo"
+others = "wait"</pre>
+<table>
+  <tr><th>Setting</th><th>Value</th><th>Effect</th></tr>
+  <tr><td rowspan="3"><code>mine</code></td><td><code>"todo"</code></td><td>Your drafts are listed with everything else that waits on you.</td></tr>
+  <tr><td><code>"apart"</code></td><td>They stay on the board but leave <em>To do</em>, the counts and the notifications. They show only in panes filtered on <code>is:draft</code>.</td></tr>
+  <tr><td><code>"ignore"</code></td><td>They are left off the board until they are ready.</td></tr>
+  <tr><td rowspan="3"><code>others</code></td><td><code>"wait"</code></td><td>A draft you review is listed as waiting on its author.</td></tr>
+  <tr><td><code>"review"</code></td><td>It is treated like any other review.</td></tr>
+  <tr><td><code>"ignore"</code></td><td>It is left off the board.</td></tr>
+</table>
+<p>To give your drafts a pane of their own, set <code>mine = "apart"</code> and add a pane filtered on <code>is:draft role:author</code>. See <a href="spaces.html#a-pane-for-your-drafts">Spaces</a>.</p>
+
+<h2>Nudge</h2>
+<pre>[nudge]
+after_days = 7</pre>
+<p>A waiting item that nobody touched for that many days becomes <em>Nudge</em> in <strong>To do</strong>. <code>0</code>, the default, turns it off.</p>
+
+<h2>Ticket statuses</h2>
+<pre>[tickets]
+waiting_statuses = ["blocked", "on hold", "in review", "waiting"]</pre>
+<p>A ticket in one of these statuses (compared without case) is <em>Blocked</em>, in <strong>Waiting</strong>. So is a ticket with an "is blocked by" link.</p>
