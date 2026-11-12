@@ -23,8 +23,24 @@ pub enum Command {
     Doctor,
     Rules,
     Spaces,
+    /// Start the spaces over from the sources, keeping the old file aside.
+    SpacesReset,
+    /// Serve the board to an assistant, over standard input and output.
+    Mcp,
+    /// Say how to plug the board into an assistant.
+    McpSetup,
+    /// Open the agent on the task this names.
+    Agent {
+        task: String,
+        /// Say what would be opened, and the brief, without opening it.
+        dry_run: bool,
+    },
     CachePath,
     CacheClear,
+    /// List the sounds that can be named, or play one.
+    Sounds {
+        play: Option<String>,
+    },
     ConfigPath,
     ConfigInit,
     Help,
@@ -32,32 +48,43 @@ pub enum Command {
 }
 
 pub const HELP: &str = "\
-myturn: whose turn is it?
+aki: whose turn is it?
 
 One list of what waits on you, and what waits on others, across GitLab,
 GitHub and Jira.
 
 USAGE
-  myturn                 live board in a terminal, the list when piped
-  myturn watch           live board: spaces, tiled panes, filters, groups;
+  aki                    live board in a terminal, the list when piped
+  aki watch              live board: spaces, tiled panes, filters, groups;
                          refreshes by itself, notifies what is new (? for keys)
-  myturn list            print the board once
+  aki list               print the board once
       --todo | --waiting   only one side
       --space NAME         only what belongs to one of your spaces
-      --filter QUERY       is: source: repo: kind: top: role: by: words, -negated
+      --filter QUERY       is:todo|waiting|draft|snoozed source: repo: kind: top:
+                           role: by: heat: ticket: priority: agent: words, -negated
       --sort ORDER         urgency (default), rule, waiting, updated, created
       --reverse            the opposite order
       --fresh              ask the sources even if a recent reading is cached
       --json               machine-readable
       --count              one line: \"3 to do · 5 waiting\"
-  myturn spaces          where your spaces are kept, and what they are
-  myturn cache path      where what was read is kept (SQLite)
-  myturn cache clear     forget it all
-  myturn doctor          check the connection to every source
-  myturn rules           print every rule as configured
-  myturn config path     where the configuration file is
-  myturn config init     write a commented configuration file with the defaults
-  myturn help | version
+  aki agent REF          open your coding agent on a task (web!916, PROJ-7…),
+                         briefed, in its clone; `a` in the board does the same
+      --dry-run            only say where it would open, and the brief
+  aki spaces             where your spaces come from, what each one shows and
+                         which repositories it holds right now
+  aki spaces reset       start them over from your sources (the old file is kept
+                         beside, as spaces.toml.bak)
+  aki mcp                serve the board to an assistant (Claude Desktop, Claude
+                         Code…) over the Model Context Protocol
+  aki mcp setup          what to paste where to plug it in
+  aki sounds [NAME]      list the sounds a new task can ring with, or play one
+  aki cache path         where what was read is kept (SQLite)
+  aki cache clear        forget it all
+  aki doctor             check the connection to every source
+  aki rules              print every rule as configured
+  aki config path        where the configuration file is
+  aki config init        write a commented configuration file with the defaults
+  aki help | version
 ";
 
 /// `interactive`: whether output goes to a terminal.
@@ -89,18 +116,47 @@ pub fn parse(arguments: &[String], interactive: bool) -> Result<Command, String>
         "watch" => none(Command::Watch),
         "doctor" => none(Command::Doctor),
         "rules" => none(Command::Rules),
-        "spaces" => none(Command::Spaces),
+        "spaces" => match rest.as_slice() {
+            [] => Ok(Command::Spaces),
+            ["reset"] => Ok(Command::SpacesReset),
+            _ => Err("usage: aki spaces [reset]".to_string()),
+        },
+        "mcp" => match rest.as_slice() {
+            [] => Ok(Command::Mcp),
+            ["setup"] => Ok(Command::McpSetup),
+            _ => Err("usage: aki mcp [setup]".to_string()),
+        },
+        "agent" => match rest.as_slice() {
+            [task] if !task.starts_with("--") => Ok(Command::Agent {
+                task: task.to_string(),
+                dry_run: false,
+            }),
+            [task, "--dry-run"] | ["--dry-run", task] if !task.starts_with("--") => {
+                Ok(Command::Agent {
+                    task: task.to_string(),
+                    dry_run: true,
+                })
+            }
+            _ => Err("usage: aki agent REFERENCE [--dry-run]".to_string()),
+        },
         "help" | "--help" | "-h" => Ok(Command::Help),
         "version" | "--version" | "-V" => Ok(Command::Version),
         "config" => match rest.as_slice() {
             ["path"] => Ok(Command::ConfigPath),
             ["init"] => Ok(Command::ConfigInit),
-            _ => Err("usage: myturn config path | init".to_string()),
+            _ => Err("usage: aki config path | init".to_string()),
+        },
+        "sounds" => match rest.as_slice() {
+            [] => Ok(Command::Sounds { play: None }),
+            [sound] => Ok(Command::Sounds {
+                play: Some(sound.to_string()),
+            }),
+            _ => Err("usage: aki sounds [NAME or FILE]".to_string()),
         },
         "cache" => match rest.as_slice() {
             ["path"] => Ok(Command::CachePath),
             ["clear"] => Ok(Command::CacheClear),
-            _ => Err("usage: myturn cache path | clear".to_string()),
+            _ => Err("usage: aki cache path | clear".to_string()),
         },
         "list" => {
             let (mut json, mut count, mut only) = (false, false, None);
@@ -201,6 +257,15 @@ mod tests {
             parse_words(&["cache", "clear"], true),
             Ok(Command::CacheClear)
         );
+        assert_eq!(
+            parse_words(&["agent", "web!916", "--dry-run"], true),
+            Ok(Command::Agent {
+                task: "web!916".into(),
+                dry_run: true
+            })
+        );
+        assert!(parse_words(&["agent"], true).is_err());
+        assert!(parse_words(&["agent", "--dry-run"], true).is_err());
     }
 
     #[test]
@@ -208,6 +273,13 @@ mod tests {
         assert!(parse_words(&["sync"], true).is_err());
         assert!(parse_words(&["doctor", "now"], true).is_err());
         assert!(parse_words(&["config"], true).is_err());
+        assert_eq!(parse_words(&["mcp"], false), Ok(Command::Mcp));
+        assert_eq!(parse_words(&["mcp", "setup"], true), Ok(Command::McpSetup));
+        assert!(parse_words(&["mcp", "serve"], true).is_err());
+        assert_eq!(
+            parse_words(&["spaces", "reset"], true),
+            Ok(Command::SpacesReset)
+        );
         assert_eq!(
             parse_words(&["config", "init"], true),
             Ok(Command::ConfigInit)

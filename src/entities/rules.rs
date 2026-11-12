@@ -66,6 +66,39 @@ impl OthersDrafts {
     }
 }
 
+/// What to do with my own drafts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OwnDrafts {
+    /// With everything else that waits on me.
+    Todo,
+    /// On the board, but only in the panes that ask for drafts (`is:draft`):
+    /// not in "to do", not counted, not announced.
+    Apart,
+    /// Off the board until they are ready.
+    Ignore,
+}
+
+impl OwnDrafts {
+    pub const NAMES: [&'static str; 3] = ["todo", "apart", "ignore"];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            OwnDrafts::Todo => "todo",
+            OwnDrafts::Apart => "apart",
+            OwnDrafts::Ignore => "ignore",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "todo" => Some(OwnDrafts::Todo),
+            "apart" => Some(OwnDrafts::Apart),
+            "ignore" => Some(OwnDrafts::Ignore),
+            _ => None,
+        }
+    }
+}
+
 /// A user's override of one rule. `None` keeps the default.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RuleOverride {
@@ -93,6 +126,7 @@ pub struct Rules {
     /// Bots' comments never give anyone the ball.
     pub ignore_bots: bool,
     pub others_drafts: OthersDrafts,
+    pub own_drafts: OwnDrafts,
     /// A waiting item idle this many days becomes a "nudge" to do. 0: never.
     pub nudge_after_days: u32,
     /// Ticket statuses that mean "not mine to move", compared case-insensitively.
@@ -115,6 +149,7 @@ impl Default for Rules {
             who_resolves: Resolver::Reviewer,
             ignore_bots: true,
             others_drafts: OthersDrafts::Wait,
+            own_drafts: OwnDrafts::Todo,
             nudge_after_days: 0,
             ticket_waiting_statuses: ["blocked", "on hold", "in review", "waiting"]
                 .map(String::from)

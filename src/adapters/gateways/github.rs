@@ -32,7 +32,8 @@ const SEARCH: &str = "query($q: String!, $after: String) {
         assignees(first: 20) { nodes { login } }
       }
       ... on PullRequest {
-        id number title url createdAt updatedAt isDraft mergeable reviewDecision headRefName
+        id number title url createdAt updatedAt isDraft mergeable mergeStateStatus
+        reviewDecision headRefName
         repository { nameWithOwner viewerPermission }
         author { __typename login }
         assignees(first: 20) { nodes { login } }
@@ -388,6 +389,8 @@ fn read_pull_request(node: &Value, talk: &Value, me: &str, source: &str) -> Opti
             _ => Checks::None,
         },
         conflicts: node["mergeable"].as_str() == Some("CONFLICTING"),
+        // GitHub only says so where the branch must be up to date to merge.
+        behind_target: node["mergeStateStatus"].as_str() == Some("BEHIND"),
         i_can_merge: matches!(
             node["repository"]["viewerPermission"].as_str(),
             Some("ADMIN" | "MAINTAIN" | "WRITE")

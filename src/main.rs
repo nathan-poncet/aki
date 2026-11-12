@@ -1,4 +1,4 @@
-//! myturn: whose turn is it?
+//! aki: whose turn is it?
 //!
 //! Dependencies point inward only:
 //! `app` (composition) → `adapters` (details) → `use_cases` (policy) → `entities` (rules).

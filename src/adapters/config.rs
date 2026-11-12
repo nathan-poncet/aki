@@ -9,7 +9,9 @@ use serde::Deserialize;
 
 use super::gateways::jira::DEFAULT_JQL;
 use super::gateways::session::Credential;
-use crate::entities::rules::{OthersDrafts, Resolver, RuleOverride, Rules};
+use super::gateways::sound::Sounds;
+use crate::entities::handoff::AgentSettings;
+use crate::entities::rules::{OthersDrafts, OwnDrafts, Resolver, RuleOverride, Rules};
 use crate::entities::task::{Bucket, Kind, Trigger};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,6 +53,59 @@ pub struct Config {
     pub cache: Duration,
     pub notifications: bool,
     pub sources: Vec<SourceConfig>,
+    pub agent: AgentConfig,
+    pub sounds: Sounds,
+    pub mcp: McpConfig,
+}
+
+/// What an assistant plugged into `aki mcp` may do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct McpConfig {
+    /// Whether the server answers at all.
+    pub enabled: bool,
+    pub set_aside: bool,
+    pub start_agent: bool,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            set_aside: true,
+            start_agent: true,
+        }
+    }
+}
+
+/// Where a new Claude conversation opens, until told otherwise.
+pub const CHAT_URL: &str = "https://claude.ai/new?q={prompt}";
+
+/// What opens an agent's terminal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LauncherChoice {
+    /// Herdr when aki runs inside it, else the terminal itself.
+    Auto,
+    Herdr,
+    Terminal,
+    /// No terminal at all: a new Claude conversation, started on the brief.
+    Claude,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentConfig {
+    pub settings: AgentSettings,
+    pub launcher: LauncherChoice,
+    /// The user's own way to open a terminal window, for terminals aki
+    /// does not know.
+    pub terminal: Option<Vec<String>>,
+    /// A named Herdr session to open agents in.
+    pub herdr_session: Option<String>,
+    /// The address a new conversation opens at; `{prompt}` is the brief.
+    pub chat_url: String,
+    /// Where clones are looked for. `None`: the usual places.
+    pub roots: Option<Vec<PathBuf>>,
+    /// Repository path → its folder, for clones that are found nowhere.
+    pub repos: BTreeMap<String, PathBuf>,
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -84,6 +139,17 @@ struct File {
     nudge: NudgeFile,
     urgency: UrgencyFile,
     rules: BTreeMap<String, RuleFile>,
+    agent: AgentFile,
+    sounds: SoundsFile,
+    mcp: McpFile,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct McpFile {
+    enabled: Option<bool>,
+    set_aside: Option<bool>,
+    start_agent: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -110,6 +176,7 @@ struct ThreadsFile {
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct DraftsFile {
+    mine: Option<String>,
     others: Option<String>,
 }
 
@@ -130,6 +197,113 @@ struct TicketsFile {
 #[serde(default, deny_unknown_fields)]
 struct NudgeFile {
     after_days: Option<u32>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct SoundsFile {
+    enabled: Option<bool>,
+    new_task: Option<String>,
+    rules: BTreeMap<String, String>,
+}
+
+fn read_sounds(file: SoundsFile) -> Result<Sounds, ConfigError> {
+    let mut sounds = Sounds::default();
+    sounds.enabled = file.enabled.unwrap_or(sounds.enabled);
+    sounds.new_task = file.new_task.unwrap_or(sounds.new_task);
+    for (name, sound) in file.rules {
+        let Some(kind) = Kind::from_name(&name) else {
+            return unknown("sounds.rules", "rule", &name, &Kind::ALL.map(Kind::name));
+        };
+        sounds.rules.insert(kind, sound);
+    }
+    Ok(sounds)
+}
+
+/// A command written as one line, or word by word.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Words {
+    Line(String),
+    List(Vec<String>),
+}
+
+impl Words {
+    fn into_words(self) -> Vec<String> {
+        match self {
+            Words::Line(line) => line.split_whitespace().map(str::to_string).collect(),
+            Words::List(words) => words,
+        }
+    }
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct AgentFile {
+    command: Option<Words>,
+    workspace: Option<String>,
+    tab: Option<String>,
+    instructions: Option<String>,
+    focus: Option<bool>,
+    launcher: Option<String>,
+    terminal: Option<Words>,
+    herdr_session: Option<String>,
+    chat_url: Option<String>,
+    roots: Option<Vec<String>>,
+    repos: BTreeMap<String, String>,
+}
+
+/// `~/code` → the home folder's `code`.
+fn expand(path: &str) -> PathBuf {
+    let home = || PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    match path.strip_prefix("~/") {
+        Some(rest) => home().join(rest),
+        None if path == "~" => home(),
+        None => PathBuf::from(path),
+    }
+}
+
+fn read_agent(file: AgentFile) -> Result<AgentConfig, ConfigError> {
+    let mut settings = AgentSettings::default();
+    if let Some(command) = file.command {
+        let words = command.into_words();
+        if words.is_empty() {
+            return Err(ConfigError::Syntax("agent.command is empty".to_string()));
+        }
+        settings.command = words;
+    }
+    settings.workspace = file.workspace.unwrap_or(settings.workspace);
+    settings.tab = file.tab.unwrap_or(settings.tab);
+    settings.instructions = file.instructions.unwrap_or(settings.instructions);
+    settings.focus = file.focus.unwrap_or(settings.focus);
+    Ok(AgentConfig {
+        settings,
+        launcher: match file.launcher.as_deref() {
+            None | Some("auto") => LauncherChoice::Auto,
+            Some("herdr") => LauncherChoice::Herdr,
+            Some("terminal") => LauncherChoice::Terminal,
+            Some("claude") => LauncherChoice::Claude,
+            Some(other) => {
+                return unknown(
+                    "agent.launcher",
+                    "value",
+                    other,
+                    &["auto", "herdr", "terminal", "claude"],
+                );
+            }
+        },
+        chat_url: file.chat_url.unwrap_or_else(|| CHAT_URL.to_string()),
+        terminal: file.terminal.map(Words::into_words),
+        herdr_session: file.herdr_session,
+        roots: file
+            .roots
+            .map(|roots| roots.iter().map(|root| expand(root)).collect()),
+        repos: file
+            .repos
+            .iter()
+            .map(|(repository, folder)| (repository.clone(), expand(folder)))
+            .collect(),
+    })
 }
 
 #[derive(Default, Deserialize)]
@@ -223,6 +397,12 @@ impl Config {
                 }
             };
         }
+        if let Some(name) = &file.drafts.mine {
+            rules.own_drafts = match OwnDrafts::from_name(name) {
+                Some(policy) => policy,
+                None => return unknown("drafts.mine", "value", name, &OwnDrafts::NAMES),
+            };
+        }
         if let Some(names) = &file.re_review.triggers {
             let expected = Trigger::ALL.map(Trigger::name);
             rules.re_review_triggers = names
@@ -296,6 +476,16 @@ impl Config {
             cache: Duration::from_secs(file.cache_seconds.unwrap_or(60)),
             notifications: file.notifications.unwrap_or(true),
             sources,
+            agent: read_agent(file.agent)?,
+            sounds: read_sounds(file.sounds)?,
+            mcp: {
+                let default = McpConfig::default();
+                McpConfig {
+                    enabled: file.mcp.enabled.unwrap_or(default.enabled),
+                    set_aside: file.mcp.set_aside.unwrap_or(default.set_aside),
+                    start_agent: file.mcp.start_agent.unwrap_or(default.start_agent),
+                }
+            },
         })
     }
 
@@ -380,10 +570,10 @@ fn read_source(source: SourceFile) -> Result<SourceConfig, ConfigError> {
     }
 }
 
-/// `$MYTURN_CONFIG`, else `$XDG_CONFIG_HOME/myturn/config.toml`, else
-/// `~/.config/myturn/config.toml`.
+/// `$AKI_CONFIG`, else `$XDG_CONFIG_HOME/aki/config.toml`, else
+/// `~/.config/aki/config.toml`.
 pub fn path() -> PathBuf {
-    if let Some(path) = std::env::var_os("MYTURN_CONFIG") {
+    if let Some(path) = std::env::var_os("AKI_CONFIG") {
         return PathBuf::from(path);
     }
     let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -391,7 +581,7 @@ pub fn path() -> PathBuf {
         .unwrap_or_else(|| {
             PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config")
         });
-    base.join("myturn").join("config.toml")
+    base.join("aki").join("config.toml")
 }
 
 /// The user's spaces, beside the configuration: `spaces.toml`.
@@ -399,15 +589,27 @@ pub fn spaces_path() -> PathBuf {
     path().with_file_name("spaces.toml")
 }
 
-/// Where gateways may keep what they already read: `$XDG_CACHE_HOME/myturn`,
-/// else `~/.cache/myturn`.
+/// Where gateways may keep what they already read: `$XDG_CACHE_HOME/aki`,
+/// else `~/.cache/aki`.
 pub fn cache_dir() -> PathBuf {
     std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache")
         })
-        .join("myturn")
+        .join("aki")
+}
+
+/// What the user set aside: `$XDG_STATE_HOME/aki/snoozed.json`, else
+/// `~/.local/state/aki/snoozed.json`.
+pub fn snoozes_path() -> PathBuf {
+    std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state")
+        })
+        .join("aki")
+        .join("snoozed.json")
 }
 
 /// The SQLite file of everything already read.
@@ -415,7 +617,7 @@ pub fn cache_path() -> PathBuf {
     cache_dir().join("cache.db")
 }
 
-/// What `myturn config init` writes: every setting, at its default.
+/// What `aki config init` writes: every setting, at its default.
 pub const TEMPLATE: &str = include_str!("../../config/example.toml");
 
 #[cfg(test)]
@@ -458,6 +660,7 @@ mod tests {
             ignore_bots = false
 
             [drafts]
+            mine = "apart"
             others = "ignore"
 
             [re_review]
@@ -491,6 +694,7 @@ mod tests {
         assert_eq!(rules.who_resolves, Resolver::Author);
         assert!(!rules.ignore_bots);
         assert_eq!(rules.others_drafts, OthersDrafts::Ignore);
+        assert_eq!(rules.own_drafts, OwnDrafts::Apart);
         assert_eq!(
             rules.re_review_triggers,
             [Trigger::ReRequested, Trigger::AllThreadsAnswered]
@@ -531,6 +735,124 @@ mod tests {
             SourceConfig::Jira { name, jql, credential, .. }
             if name == "jira" && jql == DEFAULT_JQL
                 && credential.command.as_deref() == Some("pass jira") && credential.env.is_none()));
+    }
+
+    #[test]
+    fn the_agent_is_claude_in_herdr_or_the_terminal_until_told_otherwise() {
+        let agent = parse("").unwrap().agent;
+        assert_eq!(agent.settings, AgentSettings::default());
+        assert_eq!(agent.launcher, LauncherChoice::Auto);
+        assert_eq!(
+            (agent.terminal, agent.roots, agent.herdr_session),
+            (None, None, None)
+        );
+    }
+
+    #[test]
+    fn the_agent_is_set_up_in_a_few_lines() {
+        let agent = parse(
+            r#"
+            [agent]
+            command = "codex --full-auto {prompt}"
+            workspace = "{source}/{repo}"
+            tab = "{ref}"
+            instructions = "Answer in French."
+            focus = false
+            launcher = "terminal"
+            terminal = ["alacritty", "-e", "{command}"]
+            roots = ["~/code", "/srv/git"]
+
+            [agent.repos]
+            "acme/web" = "~/elsewhere/web"
+            "#,
+        )
+        .unwrap()
+        .agent;
+
+        assert_eq!(agent.settings.command, ["codex", "--full-auto", "{prompt}"]);
+        assert_eq!(agent.settings.workspace, "{source}/{repo}");
+        assert_eq!(agent.settings.tab, "{ref}");
+        assert_eq!(agent.settings.instructions, "Answer in French.");
+        assert!(!agent.settings.focus);
+        assert_eq!(agent.launcher, LauncherChoice::Terminal);
+        assert_eq!(
+            agent.terminal,
+            Some(vec![
+                "alacritty".to_string(),
+                "-e".into(),
+                "{command}".into()
+            ])
+        );
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+        assert_eq!(
+            agent.roots,
+            Some(vec![home.join("code"), PathBuf::from("/srv/git")])
+        );
+        assert_eq!(agent.repos["acme/web"], home.join("elsewhere/web"));
+
+        // Word by word, for arguments with spaces.
+        let agent = parse("[agent]\ncommand = [\"claude\", \"--model\", \"a b\"]")
+            .unwrap()
+            .agent;
+        assert_eq!(agent.settings.command, ["claude", "--model", "a b"]);
+        assert!(matches!(
+            parse("[agent]\nlauncher = \"screen\""),
+            Err(ConfigError::UnknownName { name, .. }) if name == "screen"
+        ));
+        assert!(parse("[agent]\ncommand = \"\"").is_err());
+    }
+
+    #[test]
+    fn an_assistant_is_let_in_and_can_be_held_back() {
+        let config = parse("").unwrap();
+        assert_eq!(config.mcp, McpConfig::default());
+        assert!(config.mcp.enabled && config.mcp.set_aside && config.mcp.start_agent);
+        assert_eq!(config.agent.chat_url, CHAT_URL);
+
+        let config = parse(
+            r#"
+            [agent]
+            launcher = "claude"
+            chat_url = "claude://claude.ai/new?q={prompt}"
+
+            [mcp]
+            start_agent = false
+            "#,
+        )
+        .unwrap();
+        assert_eq!(config.agent.launcher, LauncherChoice::Claude);
+        assert_eq!(config.agent.chat_url, "claude://claude.ai/new?q={prompt}");
+        assert!(config.mcp.set_aside && !config.mcp.start_agent);
+        assert!(!parse("[mcp]\nenabled = false").unwrap().mcp.enabled);
+    }
+
+    #[test]
+    fn sounds_ring_by_default_and_follow_the_users_choices() {
+        let sounds = parse("").unwrap().sounds;
+        assert_eq!(sounds, Sounds::default());
+        assert!(sounds.enabled && !sounds.new_task.is_empty());
+
+        let sounds = parse(
+            r#"
+            [sounds]
+            new_task = "~/sounds/ding.wav"
+
+            [sounds.rules]
+            review_requested = "Ping"
+            draft_to_finish = "none"
+            "#,
+        )
+        .unwrap()
+        .sounds;
+        assert_eq!(sounds.new_task, "~/sounds/ding.wav");
+        assert_eq!(sounds.rules[&Kind::ReviewRequested], "Ping");
+        assert_eq!(sounds.rules[&Kind::DraftToFinish], "none");
+
+        assert!(!parse("[sounds]\nenabled = false").unwrap().sounds.enabled);
+        assert!(matches!(
+            parse("[sounds.rules]\nreviews = \"Ping\""),
+            Err(ConfigError::UnknownName { name, .. }) if name == "reviews"
+        ));
     }
 
     #[test]

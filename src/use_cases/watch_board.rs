@@ -44,7 +44,9 @@ mod tests {
     use super::*;
     use crate::entities::rules::Rules;
     use crate::use_cases::ports::{SourceError, WorkSource};
-    use crate::use_cases::testing::{FixedClock, Recorder, ScriptedSource, Turns, review_request};
+    use crate::use_cases::testing::{
+        FixedClock, NoSnoozes, Recorder, ScriptedSource, Turns, review_request,
+    };
 
     fn watch(source: ScriptedSource, turns: usize) -> Recorder {
         let sources: Vec<Box<dyn WorkSource>> = vec![Box::new(source)];
@@ -54,6 +56,7 @@ mod tests {
                 sources: &sources,
                 clock: &FixedClock(1_000),
                 rules: &Rules::default(),
+                snoozes: &NoSnoozes,
             },
             notifier: &recorder,
             pacer: &Turns::new(turns),

@@ -47,11 +47,11 @@ impl Notifier for DesktopNotifier {
         let (title, body) = match news {
             [] => return,
             [task] => (
-                format!("myturn · {}", wording::headline(task)),
+                format!("aki · {}", wording::headline(task)),
                 format!("{} {}", task.item.short(), task.item.title),
             ),
             many => (
-                format!("myturn · {} new things to do", many.len()),
+                format!("aki · {} new things to do", many.len()),
                 many.iter()
                     .map(|task| task.item.short())
                     .collect::<Vec<_>>()
@@ -70,12 +70,6 @@ impl Notifier for DesktopNotifier {
             let _ = quiet("notify-send").args([&title, &body]).spawn();
         }
     }
-}
-
-pub struct SilentNotifier;
-
-impl Notifier for SilentNotifier {
-    fn announce(&self, _news: &[&Task]) {}
 }
 
 /// Looks again every `interval`, or sooner when asked to through the channel.

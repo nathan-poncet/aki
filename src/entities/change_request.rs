@@ -69,6 +69,8 @@ pub struct ChangeRequest {
     pub approvals_missing: u32,
     pub checks: Checks,
     pub conflicts: bool,
+    /// The target branch moved on since this one left it.
+    pub behind_target: bool,
     /// Whether merging is in my hands, or a maintainer's.
     pub i_can_merge: bool,
 }

@@ -4,6 +4,9 @@ use crate::entities::task::{Bucket, Detail, Kind, Reason, Task, Trigger};
 use unicode_width::UnicodeWidthStr;
 
 use crate::entities::desk::{GroupKey, Pane, Sort};
+use crate::entities::handoff::AgentState;
+use crate::entities::rules::Rules;
+use crate::entities::snooze::Until;
 use crate::entities::time::Timestamp;
 use crate::entities::urgency::Heat;
 
@@ -16,6 +19,7 @@ pub fn label(kind: Kind) -> &'static str {
         Kind::ThreadToResolve => "Resolve threads",
         Kind::ChecksFailed => "Fix checks",
         Kind::Conflicts => "Fix conflicts",
+        Kind::Rebase => "Rebase",
         Kind::ReadyToMerge => "Merge",
         Kind::Assigned => "Assigned",
         Kind::NoReviewer => "Ask a review",
@@ -32,7 +36,7 @@ pub fn label(kind: Kind) -> &'static str {
     }
 }
 
-/// The rule in one line, for `myturn rules`.
+/// The rule in one line, for `aki rules`.
 pub fn describe(kind: Kind) -> &'static str {
     match kind {
         Kind::ReviewRequested => "your review is requested and you have not started",
@@ -44,6 +48,7 @@ pub fn describe(kind: Kind) -> &'static str {
         Kind::ThreadToResolve => "an answered thread is yours to check and resolve",
         Kind::ChecksFailed => "the pipeline of your change failed",
         Kind::Conflicts => "your change conflicts with its target branch",
+        Kind::Rebase => "your change is behind its target branch",
         Kind::ReadyToMerge => "your change is approved, green and quiet",
         Kind::Assigned => "a change you neither wrote nor review is assigned to you",
         Kind::NoReviewer => "your change is ready but nobody was asked to review it",
@@ -143,6 +148,7 @@ pub fn explain(reason: &Reason) -> String {
             Kind::ChecksFailed => "the pipeline failed",
             Kind::ChecksRunning => "the pipeline is running",
             Kind::Conflicts => "conflicts with the target branch",
+            Kind::Rebase => "behind its target branch",
             Kind::ReadyToMerge => "approved, green, no open thread",
             Kind::Assigned => "assigned to you",
             Kind::NoReviewer => "nobody was asked to review",
@@ -158,6 +164,24 @@ pub fn explain(reason: &Reason) -> String {
 /// How a pane is ordered, with the direction: the natural one points down.
 pub fn sort(sort: Sort, reversed: bool) -> String {
     format!("{} {}", sort.name(), if reversed { "↑" } else { "↓" })
+}
+
+/// What an order puts first, in full.
+pub fn sort_explained(sort: Sort, reversed: bool) -> String {
+    let order = match sort {
+        Sort::Urgency => {
+            "the highest urgency score first; among equals, the one that has waited longest"
+        }
+        Sort::Rule => "in the order of the rules (their priority); among equals, the freshest",
+        Sort::Waiting => "what has waited longest first",
+        Sort::Updated => "what moved most recently first",
+        Sort::Created => "what was opened first",
+    };
+    if reversed {
+        format!("{order} — reversed")
+    } else {
+        order.to_string()
+    }
 }
 
 /// The mark of a task that should not wait any longer.
@@ -197,6 +221,130 @@ pub fn urgency(task: &Task) -> String {
         parts.push(format!("{what} {:+}", urgency.ticket));
     }
     format!("urgency {} = {}", urgency.score(), parts.join(", "))
+}
+
+/// One line of the score's sum: what counts, how, and for how much.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Part {
+    pub what: &'static str,
+    pub how: String,
+    pub points: String,
+}
+
+/// The score, line by line, with the user's own weights: nothing about the
+/// order of the board is left to guess.
+pub fn urgency_parts(task: &Task, rules: &Rules, now: Timestamp) -> Vec<Part> {
+    let weights = &rules.urgency;
+    let urgency = &task.urgency;
+    let headline = task.headline();
+    let mut parts = vec![Part {
+        what: "rule",
+        how: format!(
+            "\"{}\" has priority {} (0 first, 100 last): 100 − {}",
+            label(headline.kind),
+            headline.priority,
+            headline.priority
+        ),
+        points: format!("{}", urgency.rule),
+    }];
+
+    let days = task.since.days_until(now);
+    let capped = days.saturating_mul(weights.per_day) > weights.waiting_cap;
+    parts.push(Part {
+        what: "waiting",
+        how: format!(
+            "{} × {} a day{}",
+            plural(days, "day", "days"),
+            weights.per_day,
+            if capped {
+                format!(", at most {}", weights.waiting_cap)
+            } else {
+                String::new()
+            }
+        ),
+        points: format!("{:+}", urgency.waiting),
+    });
+
+    if let Some(priority) = task.priority_level {
+        parts.push(Part {
+            what: "priority",
+            how: format!("this ticket is \"{}\"", priority.name()),
+            points: format!("{:+}", weights.points(priority)),
+        });
+    }
+    if !task.tickets.is_empty() {
+        let top = task
+            .tickets
+            .iter()
+            .filter_map(|ticket| ticket.priority.map(|priority| (priority, &ticket.key)))
+            .max();
+        let (how, points) = match top {
+            Some((priority, key)) => (
+                format!(
+                    "tied to {key}, \"{}\" ({:+}), and {:+} for naming a ticket",
+                    priority.name(),
+                    weights.points(priority),
+                    weights.linked
+                ),
+                weights.points(priority) + weights.linked,
+            ),
+            None => (
+                format!(
+                    "tied to {} (priority unknown): {:+} for naming a ticket",
+                    tickets(task),
+                    weights.linked
+                ),
+                weights.linked,
+            ),
+        };
+        parts.push(Part {
+            what: "ticket",
+            how,
+            points: format!("{points:+}"),
+        });
+    }
+
+    parts.push(Part {
+        what: "urgency",
+        how: format!(
+            "{}: warm ▴ from {}, hot ▲ from {}",
+            urgency.heat.name(),
+            weights.warm,
+            weights.hot
+        ),
+        points: format!("= {}", urgency.score()),
+    });
+    parts
+}
+
+/// The mark of a task an agent is open on.
+pub fn agent(state: AgentState) -> &'static str {
+    match state {
+        AgentState::Working => "◐",
+        AgentState::Blocked => "?",
+        AgentState::Done => "✓",
+        AgentState::Idle => "·",
+        AgentState::Unknown => "○",
+    }
+}
+
+/// What the agent is doing, in a few words.
+pub fn agent_state(state: AgentState) -> &'static str {
+    match state {
+        AgentState::Working => "agent working",
+        AgentState::Blocked => "agent waiting for you",
+        AgentState::Done => "agent done, not looked at yet",
+        AgentState::Idle => "agent idle",
+        AgentState::Unknown => "its terminal is open",
+    }
+}
+
+/// Until when a task is set aside.
+pub fn set_aside(until: Until, now: Timestamp) -> String {
+    match until {
+        Until::Moves => "set aside until it moves".to_string(),
+        Until::At(wake) => format!("set aside for {} more", age(now, wake)),
+    }
 }
 
 /// A group's heading.
@@ -352,6 +500,34 @@ mod tests {
         );
         assert_eq!(sort(Sort::Urgency, false), "urgency ↓");
         assert_eq!(sort(Sort::Created, true), "created ↑");
+    }
+
+    #[test]
+    fn the_score_is_laid_out_line_by_line() {
+        use crate::entities::task::samples;
+        use crate::entities::ticket::{LinkedTicket, Priority};
+
+        let mut task = samples::task("gitlab", "g/web", "!7", Kind::ReviewRequested, Some("alex"));
+        task.urgency.waiting = 60;
+        task.urgency.ticket = 35;
+        task.tickets = vec![LinkedTicket {
+            key: "PROJ-7".into(),
+            priority: Some(Priority::High),
+        }];
+        let parts = urgency_parts(&task, &Rules::default(), Timestamp(30 * 86_400));
+        let lines: Vec<String> = parts
+            .iter()
+            .map(|part| format!("{} | {} | {}", part.what, part.how, part.points))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "rule | \"Review\" has priority 10 (0 first, 100 last): 100 − 10 | 90",
+                "waiting | 30 days × 3 a day, at most 60 | +60",
+                "ticket | tied to PROJ-7, \"high\" (+30), and +5 for naming a ticket | +35",
+                "urgency | calm: warm ▴ from 100, hot ▲ from 130 | = 185",
+            ]
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use super::change_request::{ChangeRequest, Checks, Note, ReviewState, Reviewer, Thread};
 use super::item::{Actor, ItemRef, WorkItem};
-use super::rules::{OthersDrafts, Resolver, RuleOverride, Rules};
+use super::rules::{OthersDrafts, OwnDrafts, Resolver, RuleOverride, Rules};
 use super::task::{Bucket, Detail, Kind, Task, Trigger};
 use super::ticket::{StatusCategory, Ticket};
 use super::time::Timestamp;
@@ -38,6 +38,7 @@ fn change(author: Actor) -> ChangeRequest {
         approvals_missing: 1,
         checks: Checks::Passed,
         conflicts: false,
+        behind_target: false,
         i_can_merge: true,
     }
 }
@@ -422,6 +423,41 @@ fn my_draft_is_mine_to_finish_and_nothing_else() {
     );
 }
 
+#[test]
+fn my_drafts_go_where_i_said() {
+    let mut draft = mine();
+    draft.draft = true;
+    draft.behind_target = true;
+
+    // With the rest, unless told otherwise.
+    let task = run(draft.clone(), &Rules::default()).unwrap();
+    assert!(task.draft && !task.apart);
+    assert_eq!(kinds(&Some(task)), [Kind::Rebase, Kind::DraftToFinish]);
+
+    // Apart: still everything there is to do on it, marked.
+    let apart = Rules {
+        own_drafts: OwnDrafts::Apart,
+        ..Rules::default()
+    };
+    let task = run(draft.clone(), &apart).unwrap();
+    assert!(task.draft && task.apart);
+    assert_eq!(task.reasons.len(), 2);
+
+    let ignore = Rules {
+        own_drafts: OwnDrafts::Ignore,
+        ..Rules::default()
+    };
+    assert_eq!(run(draft, &ignore), None);
+
+    // Only my drafts: what is ready, and others' drafts, are untouched.
+    let ready = run(mine(), &apart).unwrap();
+    assert!(!ready.draft && !ready.apart);
+    let mut theirs = theirs(ReviewState::Pending);
+    theirs.draft = true;
+    let task = run(theirs, &apart).unwrap();
+    assert!(task.draft && !task.apart);
+}
+
 // ── rules ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -609,4 +645,38 @@ fn a_ticket_weighs_its_own_priority() {
     assert_eq!(task.priority_level, Some(Priority::High));
     // The rule's 20, a day of waiting, the priority's 30.
     assert_eq!(task.urgency.score(), 20 + 3 + 30);
+}
+
+#[test]
+fn a_change_behind_its_target_is_mine_to_rebase() {
+    let mut change = mine();
+    change.behind_target = true;
+    assert_eq!(
+        kinds(&run(change.clone(), &Rules::default())),
+        [Kind::Rebase, Kind::AwaitingReview]
+    );
+
+    // Conflicts say it already, and more.
+    change.conflicts = true;
+    assert_eq!(
+        kinds(&run(change.clone(), &Rules::default())),
+        [Kind::Conflicts, Kind::AwaitingReview]
+    );
+
+    // Approved and green, but not up to date: rebase before merging.
+    change.conflicts = false;
+    change.approved = true;
+    change.approvals_missing = 0;
+    assert_eq!(
+        kinds(&run(change, &Rules::default())),
+        [Kind::Rebase, Kind::ReadyToMerge]
+    );
+
+    // Someone else's branch is theirs to rebase.
+    let mut theirs = theirs(ReviewState::Pending);
+    theirs.behind_target = true;
+    assert_eq!(
+        kinds(&run(theirs, &Rules::default())),
+        [Kind::ReviewRequested]
+    );
 }

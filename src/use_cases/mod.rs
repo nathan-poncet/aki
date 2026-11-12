@@ -2,8 +2,10 @@
 
 pub mod check_sources;
 pub mod collect_board;
+pub mod launch_agent;
 pub mod open_desk;
 pub mod ports;
+pub mod set_aside;
 pub mod watch_board;
 
 #[cfg(test)]

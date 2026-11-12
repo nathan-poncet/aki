@@ -4,10 +4,11 @@
 use std::collections::BTreeMap;
 use std::thread;
 
-use super::ports::{Clock, Recalled, WorkSource};
+use super::ports::{Clock, Recalled, Snoozes, WorkSource};
 use crate::entities::board::{Board, Failure};
 use crate::entities::item::WorkItem;
 use crate::entities::rules::Rules;
+use crate::entities::snooze;
 use crate::entities::ticket::{LinkedTicket, Priority};
 use crate::entities::time::Timestamp;
 use crate::entities::triage::triage;
@@ -16,6 +17,7 @@ pub struct CollectBoard<'a> {
     pub sources: &'a [Box<dyn WorkSource>],
     pub clock: &'a dyn Clock,
     pub rules: &'a Rules,
+    pub snoozes: &'a dyn Snoozes,
 }
 
 /// What reading the sources gave, before anything is decided.
@@ -158,11 +160,13 @@ impl CollectBoard<'_> {
 
     fn assemble(&self, mut reading: Reading, at: Timestamp, ask: bool) -> Board {
         self.link(&mut reading.items, ask);
-        let tasks = reading
+        let mut tasks: Vec<_> = reading
             .items
             .iter()
             .filter_map(|item| triage(item, self.rules, at))
             .collect();
+        // Set aside as of now, even on a board recalled from before.
+        snooze::apply(&mut tasks, &self.snoozes.load(), self.clock.now());
         Board::new(tasks, reading.reached, reading.failures, at)
     }
 }
@@ -174,7 +178,7 @@ mod tests {
     use crate::entities::urgency::Heat;
     use crate::use_cases::ports::SourceError;
     use crate::use_cases::testing::{
-        FixedClock, ScriptedSource, review_request, review_request_titled, ticket,
+        FixedClock, NoSnoozes, ScriptedSource, review_request, review_request_titled, ticket,
         ticket_with_priority,
     };
 
@@ -187,6 +191,7 @@ mod tests {
             sources: &sources,
             clock: &FixedClock(1_000),
             rules: &Rules::default(),
+            snoozes: &NoSnoozes,
         }
         .run()
     }
@@ -244,6 +249,7 @@ mod tests {
             sources: &sources,
             clock: &FixedClock(1_000),
             rules: &Rules::default(),
+            snoozes: &NoSnoozes,
         };
         let board = collect.recalled().unwrap();
         assert_eq!(board.todo.len(), 1);
@@ -256,6 +262,7 @@ mod tests {
             sources: &forgetful,
             clock: &FixedClock(1_000),
             rules: &Rules::default(),
+            snoozes: &NoSnoozes,
         };
         assert!(collect.recalled().is_none());
     }

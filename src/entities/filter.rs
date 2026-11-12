@@ -4,7 +4,7 @@
 //! is:todo source:gitlab repo:web,api -kind:draft by:alex export
 //! ```
 //!
-//! Keys: `is` (todo, waiting), `source`, `repo`, `kind` (any reason the task
+//! Keys: `is` (todo, waiting; or snoozed, draft), `source`, `repo`, `kind` (any reason the task
 //! is listed for), `top` (its most pressing reason), `role`, `by`, `heat`
 //! (hot, warm, calm), `ticket` (part of a linked ticket's key, or `any`),
 //! `priority` (of the ticket, or of the tickets a change is about).
@@ -13,6 +13,7 @@
 //! any value does; a leading `-` negates the term; a bare word is searched
 //! in the reference, the title, the repository and the counterpart.
 
+use super::handoff::AgentState;
 use super::task::{Bucket, Kind, Role, Task};
 use super::ticket::Priority;
 use super::urgency::Heat;
@@ -20,7 +21,7 @@ use super::urgency::Heat;
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum FilterError {
     #[error(
-        "unknown filter \"{0}:\" (use is, source, repo, kind, top, role, by, heat, ticket, priority)"
+        "unknown filter \"{0}:\" (use is, source, repo, kind, top, role, by, heat, ticket, priority, agent)"
     )]
     UnknownKey(String),
     #[error("\"{key}:\" needs a value")]
@@ -36,6 +37,10 @@ pub enum FilterError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Test {
     Bucket(Vec<Bucket>),
+    /// What the user set aside.
+    Snoozed,
+    /// Draft changes.
+    Draft,
     Source(Vec<String>),
     Repo(Vec<String>),
     Kind(Vec<Kind>),
@@ -43,6 +48,8 @@ enum Test {
     Role(Vec<Role>),
     By(Vec<String>),
     Heat(Vec<Heat>),
+    /// States of the agent opened on the task; empty: any agent.
+    Agent(Vec<AgentState>),
     /// Parts of ticket keys; `any` is any ticket at all.
     Ticket(Vec<String>),
     Priority(Vec<Priority>),
@@ -112,13 +119,15 @@ impl Filter {
 
     fn keyed(key: &str, values: Vec<String>) -> Result<Test, FilterError> {
         match key {
+            "is" if values == ["snoozed"] => Ok(Test::Snoozed),
+            "is" if values == ["draft"] => Ok(Test::Draft),
             "is" => values
                 .iter()
                 .map(|value| {
                     Bucket::from_name(value).ok_or_else(|| FilterError::UnknownValue {
                         key: "is",
                         value: value.clone(),
-                        expected: "todo, waiting".to_string(),
+                        expected: "todo, waiting, or snoozed or draft alone".to_string(),
                     })
                 })
                 .collect::<Result<_, _>>()
@@ -175,6 +184,21 @@ impl Filter {
                 })
                 .collect::<Result<_, _>>()
                 .map(Test::Heat),
+            "agent" if values == ["any"] => Ok(Test::Agent(Vec::new())),
+            "agent" => values
+                .iter()
+                .map(|value| {
+                    AgentState::ALL
+                        .into_iter()
+                        .find(|state| state.name() == value)
+                        .ok_or_else(|| FilterError::UnknownValue {
+                            key: "agent",
+                            value: value.clone(),
+                            expected: "any, working, blocked, done, idle, open".to_string(),
+                        })
+                })
+                .collect::<Result<_, _>>()
+                .map(Test::Agent),
             "priority" => values
                 .iter()
                 .map(|value| {
@@ -210,6 +234,8 @@ impl Filter {
         self.terms.iter().all(|term| {
             let holds = match &term.test {
                 Test::Bucket(buckets) => buckets.contains(&task.bucket()),
+                Test::Snoozed => task.snoozed.is_some(),
+                Test::Draft => task.draft,
                 Test::Source(names) => names
                     .iter()
                     .any(|name| task.item.source.to_lowercase() == *name),
@@ -217,6 +243,9 @@ impl Filter {
                     .iter()
                     .any(|part| contains(&task.item.container, part)),
                 Test::Heat(heats) => heats.contains(&task.urgency.heat),
+                Test::Agent(states) => task
+                    .agent
+                    .is_some_and(|state| states.is_empty() || states.contains(&state)),
                 Test::Ticket(parts) => parts.iter().any(|part| {
                     (part == "any" && !task.tickets.is_empty())
                         || task
@@ -257,6 +286,30 @@ impl Filter {
         })
     }
 
+    /// Whether this filter asks to see what was set aside. Everything else
+    /// leaves it out.
+    pub fn wants_snoozed(&self) -> bool {
+        self.terms
+            .iter()
+            .any(|term| !term.negated && term.test == Test::Snoozed)
+    }
+
+    /// Whether this filter asks for drafts: the only way to see those the
+    /// user's rules keep apart.
+    pub fn wants_drafts(&self) -> bool {
+        self.terms
+            .iter()
+            .any(|term| !term.negated && term.test == Test::Draft)
+    }
+
+    /// Whether `task` shows through this filter: it matches, and what is
+    /// set aside or kept apart shows only where it is asked for.
+    pub fn shows(&self, task: &Task) -> bool {
+        self.matches(task)
+            && (task.snoozed.is_none() || self.wants_snoozed())
+            && (!task.apart || self.wants_drafts())
+    }
+
     /// The side this filter keeps, when it keeps exactly one.
     pub fn bucket(&self) -> Option<Bucket> {
         self.terms.iter().find_map(|term| match &term.test {
@@ -274,7 +327,10 @@ impl Filter {
         words.extend(
             self.query
                 .split_whitespace()
-                .filter(|word| !word.trim_start_matches('-').starts_with("is:"))
+                .filter(|word| {
+                    let word = word.trim_start_matches('-');
+                    !word.starts_with("is:") || word == "is:snoozed" || word == "is:draft"
+                })
                 .map(str::to_string),
         );
         let mut terms: Vec<Term> = bucket
@@ -376,6 +432,62 @@ mod tests {
             Filter::parse("heat:tepid"),
             Err(FilterError::UnknownValue { key: "heat", .. })
         ));
+    }
+
+    #[test]
+    fn tasks_are_found_by_what_their_agent_is_doing() {
+        let mut task = task("gitlab", "group/web", Kind::ReplyNeeded, None);
+        assert!(!keeps("agent:any", &task));
+        task.agent = Some(AgentState::Blocked);
+        assert!(keeps("agent:any", &task));
+        assert!(keeps("agent:blocked,done", &task));
+        assert!(!keeps("agent:working", &task));
+        assert!(keeps("-agent:working", &task));
+        assert!(Filter::parse("agent:asleep").is_err());
+    }
+
+    #[test]
+    fn what_was_set_aside_is_asked_for_by_name() {
+        use crate::entities::snooze::Until;
+
+        let mut task = task("gitlab", "group/web", Kind::ReplyNeeded, None);
+        assert!(!keeps("is:snoozed", &task));
+        task.snoozed = Some(Until::Moves);
+        assert!(keeps("is:snoozed", &task));
+        assert!(keeps("is:snoozed is:todo", &task));
+
+        let filter = Filter::parse("is:snoozed repo:web").unwrap();
+        assert!(filter.wants_snoozed());
+        assert!(!Filter::parse("-is:snoozed").unwrap().wants_snoozed());
+        assert!(!Filter::all().wants_snoozed());
+        // Switching side keeps asking for it.
+        assert_eq!(
+            filter.with_bucket(Some(Bucket::Todo)).query(),
+            "is:todo is:snoozed repo:web"
+        );
+        assert!(Filter::parse("is:todo,snoozed").is_err());
+    }
+
+    #[test]
+    fn drafts_are_asked_for_or_left_out_by_name() {
+        let mut task = task("gitlab", "group/web", Kind::Rebase, None);
+        assert!(!keeps("is:draft", &task));
+        assert!(keeps("-is:draft", &task));
+        task.draft = true;
+        assert!(keeps("is:draft is:todo", &task));
+        assert!(!keeps("is:todo -is:draft", &task));
+
+        // Kept apart, it shows only through a filter that asks for drafts.
+        task.apart = true;
+        assert!(!Filter::parse("is:todo").unwrap().shows(&task));
+        assert!(!Filter::all().shows(&task));
+        let drafts = Filter::parse("is:draft").unwrap();
+        assert!(drafts.wants_drafts() && drafts.shows(&task));
+        assert!(!Filter::parse("-is:draft").unwrap().wants_drafts());
+        assert_eq!(
+            drafts.with_bucket(Some(Bucket::Waiting)).query(),
+            "is:waiting is:draft"
+        );
     }
 
     #[test]

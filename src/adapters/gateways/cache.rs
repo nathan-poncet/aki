@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn a_file_survives_reopening_and_an_old_schema_is_emptied() {
-        let folder = std::env::temp_dir().join(format!("myturn-cache-test-{}", std::process::id()));
+        let folder = std::env::temp_dir().join(format!("aki-cache-test-{}", std::process::id()));
         let path = folder.join("nested").join("cache.db");
         {
             let cache = Cache::open(&path).unwrap();

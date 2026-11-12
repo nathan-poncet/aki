@@ -23,18 +23,21 @@ use unicode_width::UnicodeWidthStr;
 
 use super::wording::{self, age, column, plain};
 use crate::entities::board::Board;
-#[cfg(test)]
-use crate::entities::desk::Sort;
-use crate::entities::desk::{Desk, GroupKey, Grouping, Layout, Pane, Space};
+use crate::entities::desk::{Desk, GroupKey, Grouping, Layout, Pane, Sort, Space};
 use crate::entities::filter::Filter;
+use crate::entities::handoff::AgentState;
+use crate::entities::rules::Rules;
+use crate::entities::snooze::{Snooze, Until};
 use crate::entities::task::{Bucket, Task};
 use crate::entities::time::Timestamp;
 use crate::entities::urgency::Heat;
-use crate::use_cases::ports::{BoardView, Clock, Pace};
+use crate::use_cases::ports::{BoardView, Clock, OpenSession, Pace};
 
 pub enum Update {
     Refreshing,
     Board(Board),
+    /// The terminals the launcher has open, when that changed.
+    Agents(Vec<OpenSession>),
 }
 
 /// The watch's side of the channel.
@@ -50,6 +53,9 @@ impl BoardView for ChannelView {
     }
 }
 
+/// Remembers that an item was set aside, or brought back (`None`).
+pub type Remember = dyn Fn(&str, Option<Snooze>) -> Result<(), String>;
+
 /// What the interface needs from outside.
 pub struct Wiring<'a> {
     pub updates: Receiver<Update>,
@@ -58,6 +64,16 @@ pub struct Wiring<'a> {
     pub open: &'a dyn Fn(&str),
     /// Keeps the desk for the next run; the error is shown, not fatal.
     pub save: &'a dyn Fn(&Desk) -> Result<(), String>,
+    /// Opens the user's agent on a task; says what it did, or why not.
+    pub agent: &'a dyn Fn(&Task) -> Result<String, String>,
+    /// What the agent opened on a task is doing, among the open terminals.
+    pub agent_of: &'a dyn Fn(&Task, &[OpenSession]) -> Option<AgentState>,
+    /// Remembers that an item was set aside (`None`: brought back).
+    pub snooze: &'a Remember,
+    /// The user's rules, to explain what the board shows with them.
+    pub rules: &'a Rules,
+    /// Where the spaces are kept, to say so.
+    pub kept_in: String,
 }
 
 /// What a key or a click asks of the outside.
@@ -67,6 +83,19 @@ enum Action {
     Quit,
     Refresh,
     Open(String),
+    /// Hand this task to an agent.
+    Agent(Box<Task>),
+    /// Set this item aside, or bring it back.
+    Postpone(String, Postpone),
+}
+
+/// How long a task is set aside for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Postpone {
+    Days(u32),
+    UntilItMoves,
+    /// Not any more.
+    BringBack,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,8 +132,14 @@ enum Mode {
     Prompt(Prompt),
     /// Waiting for the number of the space to send the pane to.
     Send,
+    /// Waiting for how long to set the selected task aside.
+    Postpone,
     ConfirmRemoveSpace,
     Help,
+    /// Why the selected task is here, and where its place comes from.
+    Explain,
+    /// How the shown space is made, and what it holds.
+    AboutSpace,
 }
 
 /// Where things were drawn, for the mouse.
@@ -133,11 +168,17 @@ struct Screen {
     zoomed: bool,
     detail: bool,
     refreshing: bool,
-    /// One line of feedback, until the next key.
+    /// One line of feedback, until the next key: something refused…
     notice: Option<String>,
+    /// …or something done.
+    done: Option<String>,
     /// The desk changed and must be saved.
     unsaved: bool,
     hits: Vec<Hit>,
+    /// The terminals open on tasks, as last heard.
+    sessions: Vec<OpenSession>,
+    rules: Rules,
+    kept_in: String,
 }
 
 /// The tasks a pane lists, in order.
@@ -164,8 +205,12 @@ impl Screen {
             detail: true,
             refreshing: true,
             notice: None,
+            done: None,
             unsaved: false,
             hits: Vec::new(),
+            sessions: Vec::new(),
+            rules: Rules::default(),
+            kept_in: String::new(),
         }
     }
 
@@ -219,6 +264,17 @@ impl Screen {
                     .insert(pane.id, row.min(tasks.len().saturating_sub(1)));
             }
         }
+    }
+
+    /// Says of every task on the board what its agent is doing.
+    fn mark_agents(&mut self, of: &dyn Fn(&Task, &[OpenSession]) -> Option<AgentState>) {
+        let sessions = std::mem::take(&mut self.sessions);
+        if let Some(board) = &mut self.board {
+            board.mark_agents(|task| of(task, &sessions));
+        }
+        self.sessions = sessions;
+        // A pane filtered on agents just changed under the cursor.
+        self.select(self.cursor());
     }
 
     fn changed(&mut self) {
@@ -320,12 +376,13 @@ impl Screen {
             return Action::Quit;
         }
         self.notice = None;
+        self.done = None;
         match self.mode {
             Mode::Prompt(_) => {
                 self.prompt_key(key);
                 return Action::None;
             }
-            Mode::Help => {
+            Mode::Help | Mode::Explain | Mode::AboutSpace => {
                 self.mode = Mode::Normal;
                 return Action::None;
             }
@@ -340,6 +397,22 @@ impl Screen {
                     }
                 }
                 return Action::None;
+            }
+            Mode::Postpone => {
+                self.mode = Mode::Normal;
+                let choice = match key.code {
+                    KeyCode::Char('t') => Some(Postpone::Days(1)),
+                    KeyCode::Char('w') => Some(Postpone::Days(7)),
+                    KeyCode::Char('m') => Some(Postpone::UntilItMoves),
+                    KeyCode::Char(digit @ '1'..='9') => {
+                        Some(Postpone::Days(digit as u32 - '0' as u32))
+                    }
+                    _ => None,
+                };
+                return match (choice, self.selected()) {
+                    (Some(choice), Some(task)) => Action::Postpone(task.item.id(), choice),
+                    _ => Action::None,
+                };
             }
             Mode::ConfirmRemoveSpace => {
                 self.mode = Mode::Normal;
@@ -365,7 +438,25 @@ impl Screen {
                     return Action::Open(task.target_url().to_string());
                 }
             }
+            KeyCode::Char('a') => {
+                if let Some(task) = self.selected() {
+                    return Action::Agent(Box::new(task.clone()));
+                }
+            }
+            KeyCode::Char('p') => match self.selected() {
+                // Already aside: the same key brings it back.
+                Some(task) if task.snoozed.is_some() => {
+                    return Action::Postpone(task.item.id(), Postpone::BringBack);
+                }
+                Some(_) => self.mode = Mode::Postpone,
+                None => {}
+            },
             KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('i') => match self.selected() {
+                Some(_) => self.mode = Mode::Explain,
+                None => self.refuse("no task selected to explain (I explains the space)"),
+            },
+            KeyCode::Char('I') => self.mode = Mode::AboutSpace,
             KeyCode::Esc => self.zoomed = false,
 
             // Within the pane.
@@ -470,6 +561,24 @@ impl Screen {
         Action::None
     }
 
+    /// Sets an item aside on the board at hand, or brings it back, and
+    /// says what there is to remember.
+    fn postpone(&mut self, item: &str, choice: Postpone, now: Timestamp) -> Option<Snooze> {
+        let until = match choice {
+            Postpone::Days(days) => Some(Until::At(Timestamp(now.0 + i64::from(days) * 86_400))),
+            Postpone::UntilItMoves => Some(Until::Moves),
+            Postpone::BringBack => None,
+        };
+        let snooze = self.board.as_mut()?.snooze(item, until);
+        self.done = Some(match until {
+            Some(until) => wording::set_aside(until, now),
+            None => "brought back".to_string(),
+        });
+        // The list under the cursor just lost or gained a line.
+        self.select(self.cursor());
+        snooze
+    }
+
     fn move_pane(&mut self, step: isize) {
         self.desk.shift_pane(step);
         self.changed();
@@ -568,6 +677,16 @@ fn accent(bucket: Bucket) -> Color {
     }
 }
 
+fn agent_color(state: AgentState) -> Color {
+    match state {
+        AgentState::Working => Color::Blue,
+        // The one that wants the user stands out.
+        AgentState::Blocked => Color::Magenta,
+        AgentState::Done => Color::Green,
+        AgentState::Idle | AgentState::Unknown => Color::DarkGray,
+    }
+}
+
 fn heat_color(heat: Heat) -> Color {
     match heat {
         Heat::Hot => Color::Red,
@@ -586,8 +705,8 @@ fn layout_glyph(layout: Layout) -> &'static str {
 
 /// The dock: spaces, then the state of the world.
 fn dock(screen: &mut Screen, area: Rect, now: Timestamp) -> Line<'static> {
-    let mut spans = vec![Span::styled(" myturn ", BOLD)];
-    let mut x = area.x + 8;
+    let mut spans = vec![Span::styled(" aki ", BOLD)];
+    let mut x = area.x + 5;
     for (index, space) in screen.desk.spaces().iter().enumerate() {
         let todo = screen
             .board
@@ -623,6 +742,14 @@ fn dock(screen: &mut Screen, area: Rect, now: Timestamp) -> Line<'static> {
     if !space.scope.is_all() {
         spans.push(Span::styled(format!(" · {}", space.scope.query()), DIM));
     }
+    let aside = screen.board.as_ref().map(Board::snoozed_count).unwrap_or(0);
+    if aside > 0 {
+        spans.push(Span::styled(format!(" · {aside} set aside"), DIM));
+    }
+    let apart = screen.board.as_ref().map(Board::apart_count).unwrap_or(0);
+    if apart > 0 {
+        spans.push(Span::styled(format!(" · {apart} drafts apart"), DIM));
+    }
     spans.push(Span::raw("   "));
 
     match &screen.board {
@@ -655,7 +782,16 @@ fn dock(screen: &mut Screen, area: Rect, now: Timestamp) -> Line<'static> {
 }
 
 /// One task on one line, as wide as the pane allows.
-fn row(task: &Task, grouping: Grouping, width: usize, now: Timestamp) -> ListItem<'static> {
+/// `agents`: whether the pane has a column for agents at all.
+/// `scored`: whether the pane is ordered by urgency, and shows the score
+/// its order comes from.
+fn row(
+    task: &Task,
+    grouping: Grouping,
+    width: usize,
+    (agents, scored): (bool, bool),
+    now: Timestamp,
+) -> ListItem<'static> {
     // In a pane grouped by repository, the heading already names it.
     let (reference, reference_width) = match grouping {
         Grouping::Repo => (task.item.reference.clone(), 10),
@@ -668,14 +804,33 @@ fn row(task: &Task, grouping: Grouping, width: usize, now: Timestamp) -> ListIte
     let color = Style::new().fg(accent(task.bucket()));
     let with_label = width >= 72 && grouping != Grouping::Kind;
     let with_who = width >= 110 && grouping != Grouping::Person;
+    let with_score = scored && width >= 72;
 
     // The heat mark, the reference, its gap, the title's gap, "+n" and the
     // age are always there.
     let mut title = width.saturating_sub(reference_width + 11);
-    let mut spans = vec![Span::styled(
-        format!("{} ", wording::heat(task.urgency.heat)),
-        Style::new().fg(heat_color(task.urgency.heat)),
-    )];
+    if agents {
+        title = title.saturating_sub(2);
+    }
+    let mut spans = vec![match task.snoozed {
+        // Set aside: it sleeps, whatever its heat.
+        Some(_) => Span::styled("z ", DIM),
+        None => Span::styled(
+            format!("{} ", wording::heat(task.urgency.heat)),
+            Style::new().fg(heat_color(task.urgency.heat)),
+        ),
+    }];
+    if agents {
+        spans.push(match task.agent {
+            Some(state) => Span::styled(
+                format!("{} ", wording::agent(state)),
+                Style::new()
+                    .fg(agent_color(state))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            None => Span::raw("  "),
+        });
+    }
     if with_label {
         spans.push(Span::styled(
             format!("{} ", column(wording::headline(task), 15)),
@@ -688,6 +843,9 @@ fn row(task: &Task, grouping: Grouping, width: usize, now: Timestamp) -> ListIte
     }
     if with_who {
         title = title.saturating_sub(15);
+    }
+    if with_score {
+        title = title.saturating_sub(4);
     }
     spans.push(Span::styled(
         format!("{} ", column(&reference, reference_width)),
@@ -706,6 +864,15 @@ fn row(task: &Task, grouping: Grouping, width: usize, now: Timestamp) -> ListIte
         spans.push(Span::styled(format!("{} ", column(&who, 14)), DIM));
     }
     spans.push(Span::styled(format!("{extra:<3}"), DIM));
+    if with_score {
+        spans.push(Span::styled(
+            format!("{:>4}", task.urgency.score()),
+            Style::new().fg(match task.urgency.heat {
+                Heat::Calm => Color::DarkGray,
+                heat => heat_color(heat),
+            }),
+        ));
+    }
     spans.push(Span::styled(format!("{:>4}", age(task.since, now)), DIM));
     ListItem::new(Line::from(spans))
 }
@@ -777,6 +944,11 @@ fn draw_pane(frame: &mut Frame, screen: &mut Screen, index: usize, area: Rect, n
     }
     let inner = block.inner(area);
 
+    let agents = groups
+        .iter()
+        .flat_map(|group| &group.tasks)
+        .any(|task| task.agent.is_some());
+
     // The list, and which task each of its lines is.
     let width = inner.width.saturating_sub(2) as usize;
     let mut items = Vec::new();
@@ -788,7 +960,8 @@ fn draw_pane(frame: &mut Frame, screen: &mut Screen, index: usize, area: Rect, n
             lines.push(None);
         }
         for task in &group.tasks {
-            items.push(row(task, pane.grouping, width, now));
+            let columns = (agents, pane.sort == Sort::Urgency);
+            items.push(row(task, pane.grouping, width, columns, now));
             lines.push(Some(position));
             position += 1;
         }
@@ -835,7 +1008,7 @@ fn draw_pane(frame: &mut Frame, screen: &mut Screen, index: usize, area: Rect, n
     });
 }
 
-fn detail(task: &Task) -> Vec<Line<'static>> {
+fn detail(task: &Task, now: Timestamp) -> Vec<Line<'static>> {
     let mut lines = vec![
         Line::from(vec![
             Span::styled(task.item.short(), BOLD),
@@ -865,6 +1038,23 @@ fn detail(task: &Task) -> Vec<Line<'static>> {
             Span::raw(wording::explain(reason)),
         ]));
     }
+    if let Some(state) = task.agent {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{} ", wording::agent(state)),
+                Style::new()
+                    .fg(agent_color(state))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!("{} · a shows it", wording::agent_state(state))),
+        ]));
+    }
+    if let Some(until) = task.snoozed {
+        lines.push(Line::from(Span::styled(
+            format!("z {} · p brings it back", wording::set_aside(until, now)),
+            DIM,
+        )));
+    }
     let mut score = wording::urgency(task);
     // A ticket that brings no points is still worth naming.
     if task.urgency.ticket == 0 && !task.tickets.is_empty() {
@@ -875,7 +1065,7 @@ fn detail(task: &Task) -> Vec<Line<'static>> {
             format!("{} ", wording::heat(task.urgency.heat)),
             Style::new().fg(heat_color(task.urgency.heat)),
         ),
-        Span::styled(score, DIM),
+        Span::styled(format!("{score} · i explains"), DIM),
     ]));
     lines.push(Line::from(Span::styled(task.target_url().to_string(), DIM)));
     lines
@@ -890,10 +1080,19 @@ const KEYS: &[(&str, &str)] = &[
         "Enter",
         "open in the browser, on the thread when there is one",
     ),
+    ("a", "open your coding agent on it, briefed, in its clone"),
+    (
+        "p",
+        "set it aside until a day or until it moves (filter is:snoozed shows them; p brings back)",
+    ),
+    (
+        "i",
+        "explain it: why it is here, how its urgency adds up, what every mark means",
+    ),
     ("", "THE PANE"),
     (
         "/",
-        "filter: is: source: repo: kind: top: role: by: heat: ticket: priority: words",
+        "filter: is:todo|waiting|draft|snoozed source: repo: kind: top: role: by: heat: ticket: priority: agent: words",
     ),
     ("b", "side: to do → waiting → both"),
     ("g", "group: none → repo → kind → source → person → role"),
@@ -907,6 +1106,10 @@ const KEYS: &[(&str, &str)] = &[
     ("e", "rename it"),
     ("z  d", "zoom it · show or hide the detail"),
     ("", "THE SPACE"),
+    (
+        "I",
+        "explain it: how it is made, its panes, the repositories it holds",
+    ),
     ("t", "layout: columns → rows → master → grid"),
     ("N  R  X", "new space · rename · remove"),
     ("S", "scope: what belongs to this space at all"),
@@ -915,21 +1118,56 @@ const KEYS: &[(&str, &str)] = &[
     ("r  ?  q", "refresh now · this help · quit"),
 ];
 
-fn draw_help(frame: &mut Frame) {
+/// A framed window over the board, as large as its lines ask for and the
+/// screen allows.
+fn popup(frame: &mut Frame, title: &str, lines: Vec<Line<'static>>) {
     let area = frame.area();
-    let width = 108.min(area.width);
-    let height = (KEYS.len() as u16 + 2).min(area.height);
-    let popup = Rect::new(
+    let widest = lines.iter().map(Line::width).max().unwrap_or(0) as u16;
+    let width = (widest + 4).clamp(40, 112).min(area.width);
+    let inner = width.saturating_sub(2).max(1) as usize;
+    // Long lines wrap: count the rows they will take.
+    let rows: usize = lines
+        .iter()
+        .map(|line| line.width().max(1).div_ceil(inner))
+        .sum();
+    let height = (rows as u16 + 2).min(area.height);
+    let place = Rect::new(
         area.x + (area.width - width) / 2,
         area.y + (area.height - height) / 2,
         width,
         height,
     );
+    frame.render_widget(Clear, place);
+    frame.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+            Block::new()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(FOCUS))
+                .title_top(format!(" {title} "))
+                .title_bottom(Line::from(Span::styled(" any key closes ", DIM)).right_aligned()),
+        ),
+        place,
+    );
+}
+
+fn section(title: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        format!(" {title}"),
+        Style::new().fg(FOCUS).add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn note(text: impl Into<String>) -> Line<'static> {
+    Line::from(Span::styled(format!(" {}", text.into()), DIM))
+}
+
+fn draw_help(frame: &mut Frame) {
     let lines: Vec<Line> = KEYS
         .iter()
         .map(|(keys, what)| {
             if keys.is_empty() {
-                Line::from(Span::styled(format!(" {what}"), DIM))
+                section(what)
             } else {
                 Line::from(vec![
                     Span::styled(format!(" {} ", column(keys, 25)), Style::new().fg(FOCUS)),
@@ -938,17 +1176,188 @@ fn draw_help(frame: &mut Frame) {
             }
         })
         .collect();
-    frame.render_widget(Clear, popup);
-    frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::new()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::new().fg(FOCUS))
-                .title_top(" keys "),
+    popup(frame, "keys", lines);
+}
+
+/// Everything the board says about one task, in full sentences: why it is
+/// listed, how its place is computed, and what each mark on its line means.
+fn explanation(task: &Task, pane: &Pane, rules: &Rules, now: Timestamp) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(format!(" {}", task.item.short()), BOLD),
+            Span::raw(format!("  {}", wording::fit(&plain(&task.item.title), 80))),
+        ]),
+        Line::default(),
+        section("WHY IT IS HERE"),
+    ];
+    for reason in &task.reasons {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!(" ● {} ", column(wording::label(reason.kind), 16)),
+                Style::new().fg(accent(reason.bucket)),
+            ),
+            Span::raw(wording::explain(reason)),
+            Span::styled(
+                format!(
+                    " · {} · for {}",
+                    match reason.bucket {
+                        Bucket::Todo => "yours to do",
+                        Bucket::Waiting => "waits on others",
+                    },
+                    age(reason.since, now)
+                ),
+                DIM,
+            ),
+        ]));
+    }
+    lines.push(note(match task.reasons.len() {
+        1 => "This reason names the task and decides its side.",
+        _ => "The first one is the most pressing: it names the task and decides its side.",
+    }));
+    if task.apart {
+        lines.push(note(
+            "It is a draft of yours, kept apart: it shows only in panes that ask is:draft ([drafts] mine).",
+        ));
+    }
+
+    lines.push(Line::default());
+    lines.push(section("HOW ITS URGENCY ADDS UP"));
+    for part in wording::urgency_parts(task, rules, now) {
+        let total = part.what == "urgency";
+        let style = if total { BOLD } else { Style::new() };
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {} ", column(part.what, 9)), style),
+            Span::styled(format!("{:>6}  ", part.points), style),
+            Span::styled(part.how, DIM),
+        ]));
+    }
+    lines.push(note(format!(
+        "This pane is ordered by {}: {}.",
+        wording::sort(pane.sort, pane.reversed),
+        wording::sort_explained(pane.sort, pane.reversed)
+    )));
+    lines.push(note("s changes the order, v reverses it."));
+    lines.push(note(
+        "The weights are yours: [urgency] and [rules.*] in the configuration; `aki rules` prints them.",
+    ));
+
+    lines.push(Line::default());
+    lines.push(section("READING A LINE"));
+    for (mark, meaning) in [
+        (
+            "▲ ▴",
+            "hot, warm: the urgency passed a threshold · z: set aside",
         ),
-        popup,
-    );
+        (
+            "◐ ? ✓ · ○",
+            "your agent on it: working, waiting for you, done, idle, terminal open",
+        ),
+        (
+            "Review…",
+            "the most pressing reason · yellow: yours to do · cyan: waits on others",
+        ),
+        (
+            "@name",
+            "who is on the other side: the author when you review",
+        ),
+        ("+2", "two more reasons than the one shown"),
+        ("185", "the urgency score, in panes ordered by urgency"),
+        ("3d", "for how long the most pressing reason has been true"),
+    ] {
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {} ", column(mark, 10)), Style::new().fg(FOCUS)),
+            Span::raw(meaning),
+        ]));
+    }
+    lines
+}
+
+/// How the shown space is made and what it holds.
+fn about_space(screen: &Screen) -> Vec<Line<'static>> {
+    let space = screen.desk.space();
+    let or_all = |query: &str| match query {
+        "" => "everything".to_string(),
+        query => query.to_string(),
+    };
+    let field = |name: &str, value: String, key: &str| {
+        Line::from(vec![
+            Span::styled(format!(" {} ", column(name, 7)), BOLD),
+            Span::raw(value),
+            Span::styled(format!("  {key}"), DIM),
+        ])
+    };
+    let mut lines = vec![
+        section("HOW IT IS MADE"),
+        field("name", space.name.clone(), "R renames"),
+        field(
+            "scope",
+            or_all(space.scope.query()),
+            "S changes what belongs here at all",
+        ),
+        field("layout", space.layout.name().to_string(), "t changes"),
+        note(
+            "Spaces start as \"All\" plus one per source. From then on they are what you make them:",
+        ),
+        note(format!(
+            "every change is saved in {}, which can also be edited by hand.",
+            if screen.kept_in.is_empty() {
+                "spaces.toml"
+            } else {
+                &screen.kept_in
+            }
+        )),
+        Line::default(),
+        section("ITS PANES"),
+    ];
+    for (index, pane) in space.panes.iter().enumerate() {
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {} ", index + 1), Style::new().fg(FOCUS)),
+            Span::styled(format!("{} ", column(&wording::pane_title(pane), 22)), BOLD),
+            Span::raw(format!(
+                "filter: {} · group: {} · sort: {}",
+                or_all(pane.filter.query()),
+                pane.grouping.name(),
+                wording::sort(pane.sort, pane.reversed)
+            )),
+        ]));
+    }
+    lines.push(note(
+        "/ filter · g group · s sort · n new pane · x close · e rename · m send to another space",
+    ));
+
+    lines.push(Line::default());
+    lines.push(section("WHAT IT HOLDS RIGHT NOW"));
+    let holdings = screen
+        .board
+        .as_ref()
+        .map(|board| space.holdings(board))
+        .unwrap_or_default();
+    if holdings.is_empty() {
+        lines.push(note("nothing"));
+    }
+    // A long list ends with how many are left out.
+    let shown = holdings.len().min(18);
+    for held in &holdings[..shown] {
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {} ", column(&held.source, 8)), DIM),
+            Span::raw(format!("{} ", column(&held.container, 44))),
+            Span::styled(
+                format!("{:>3} to do ", held.todo),
+                Style::new().fg(accent(Bucket::Todo)),
+            ),
+            Span::styled(
+                format!("{:>3} waiting", held.waiting),
+                Style::new().fg(accent(Bucket::Waiting)),
+            ),
+        ]));
+    }
+    if holdings.len() > shown {
+        lines.push(note(format!("and {} more", holdings.len() - shown)));
+    }
+    lines.push(note(
+        "To keep a repository out: S, then -repo:name. For one of its own: N, then S repo:name.",
+    ));
+    lines
 }
 
 fn footer(screen: &Screen) -> Line<'static> {
@@ -971,6 +1380,10 @@ fn footer(screen: &Screen) -> Line<'static> {
             " send this pane to space: 1-9 · any other key cancels",
             BOLD,
         )),
+        Mode::Postpone => Line::from(Span::styled(
+            " set aside until: t tomorrow · w a week · 1-9 days · m it moves · any other key cancels",
+            BOLD,
+        )),
         Mode::ConfirmRemoveSpace => Line::from(Span::styled(
             format!(
                 " remove the space \"{}\" and its panes? y · any other key cancels",
@@ -978,13 +1391,17 @@ fn footer(screen: &Screen) -> Line<'static> {
             ),
             BOLD,
         )),
-        _ => match &screen.notice {
-            Some(notice) => Line::from(Span::styled(
+        _ => match (&screen.notice, &screen.done) {
+            (Some(notice), _) => Line::from(Span::styled(
                 format!(" {notice}"),
                 Style::new().fg(Color::Red),
             )),
-            None => Line::from(Span::styled(
-                " ←→ pane · ↑↓ task · 1-9 space · / filter · g group · s sort · b side · t layout · n new · z zoom · ? keys",
+            (None, Some(done)) => Line::from(Span::styled(
+                format!(" {done}"),
+                Style::new().fg(Color::Green),
+            )),
+            (None, None) => Line::from(Span::styled(
+                " ←→ pane · ↑↓ task · 1-9 space · Enter open · a agent · i explain · / filter · g group · s sort · t layout · ? keys",
                 DIM,
             )),
         },
@@ -999,7 +1416,10 @@ fn draw(frame: &mut Frame, screen: &mut Screen, now: Timestamp) {
         .map(|board| board.failures.len())
         .unwrap_or(0) as u16;
     let detail_height = match screen.selected() {
-        Some(task) if screen.detail => (task.reasons.len() as u16 + 5).min(11),
+        Some(task) if screen.detail => {
+            let extra = u16::from(task.agent.is_some()) + u16::from(task.snoozed.is_some());
+            (task.reasons.len() as u16 + 5 + extra).min(12)
+        }
         _ => 0,
     };
     let [top, body, detail_area, failure_area, bottom]: [Rect; 5] = Split::vertical([
@@ -1028,7 +1448,7 @@ fn draw(frame: &mut Frame, screen: &mut Screen, now: Timestamp) {
 
     if let Some(task) = screen.selected().filter(|_| detail_height > 0) {
         frame.render_widget(
-            Paragraph::new(detail(task))
+            Paragraph::new(detail(task, now))
                 .wrap(Wrap { trim: false })
                 .block(Block::new().borders(Borders::TOP).border_style(DIM)),
             detail_area,
@@ -1058,18 +1478,42 @@ fn draw(frame: &mut Frame, screen: &mut Screen, now: Timestamp) {
     }
 
     frame.render_widget(Paragraph::new(footer(screen)), bottom);
-    if matches!(screen.mode, Mode::Help) {
-        draw_help(frame);
+    match screen.mode {
+        Mode::Help => draw_help(frame),
+        Mode::Explain => {
+            if let Some(task) = screen.selected() {
+                let lines = explanation(task, screen.desk.space().pane(), &screen.rules, now);
+                popup(frame, "this task", lines);
+            }
+        }
+        Mode::AboutSpace => {
+            let title = format!(
+                "space {} · {}",
+                screen.desk.current() + 1,
+                screen.desk.space().name
+            );
+            popup(frame, &title, about_space(screen));
+        }
+        _ => {}
     }
 }
 
 fn event_loop(terminal: &mut DefaultTerminal, desk: Desk, wiring: &Wiring) -> io::Result<()> {
     let mut screen = Screen::new(desk);
+    screen.rules = wiring.rules.clone();
+    screen.kept_in = wiring.kept_in.clone();
     loop {
         for update in wiring.updates.try_iter() {
             match update {
                 Update::Refreshing => screen.refreshing = true,
-                Update::Board(board) => screen.receive(board),
+                Update::Board(board) => {
+                    screen.receive(board);
+                    screen.mark_agents(wiring.agent_of);
+                }
+                Update::Agents(sessions) => {
+                    screen.sessions = sessions;
+                    screen.mark_agents(wiring.agent_of);
+                }
             }
         }
         if std::mem::take(&mut screen.unsaved)
@@ -1099,6 +1543,16 @@ fn event_loop(terminal: &mut DefaultTerminal, desk: Desk, wiring: &Wiring) -> io
                 let _ = wiring.requests.send(Pace::Again);
             }
             Action::Open(url) => (wiring.open)(&url),
+            Action::Postpone(item, choice) => {
+                let snooze = screen.postpone(&item, choice, wiring.clock.now());
+                if let Err(refused) = (wiring.snooze)(&item, snooze) {
+                    screen.notice = Some(refused);
+                }
+            }
+            Action::Agent(task) => match (wiring.agent)(&task) {
+                Ok(done) => screen.done = Some(done),
+                Err(refused) => screen.notice = Some(refused),
+            },
         }
     }
 }
@@ -1222,6 +1676,12 @@ mod tests {
         assert!(screen.notice.is_some(), "no ninth space: say so");
         assert_eq!(screen.desk.space().name, "Gitlab");
 
+        // The agent is handed the selected task itself.
+        let selected = screen.selected().unwrap().clone();
+        assert_eq!(
+            press(&mut screen, KeyCode::Char('a')),
+            Action::Agent(Box::new(selected))
+        );
         assert_eq!(press(&mut screen, KeyCode::Char('r')), Action::Refresh);
         assert_eq!(press(&mut screen, KeyCode::Char('q')), Action::Quit);
     }
@@ -1328,6 +1788,143 @@ mod tests {
     }
 
     #[test]
+    fn a_task_is_set_aside_and_brought_back_from_the_keyboard() {
+        let mut screen = screen(&["!1", "!2"]);
+        let now = Timestamp(1_000);
+        let first = screen.selected().unwrap().item.id();
+
+        // p, then for how long.
+        press(&mut screen, KeyCode::Char('p'));
+        assert!(matches!(screen.mode, Mode::Postpone));
+        let action = press(&mut screen, KeyCode::Char('3'));
+        assert_eq!(action, Action::Postpone(first.clone(), Postpone::Days(3)));
+        let snooze = screen.postpone(&first, Postpone::Days(3), now).unwrap();
+        assert_eq!(snooze.until, Until::At(Timestamp(1_000 + 3 * 86_400)));
+        assert_eq!(snooze.item, first);
+
+        // It left the pane, and the space's count.
+        assert_eq!(screen.tasks().len(), 1);
+        assert_ne!(screen.selected().unwrap().item.id(), first);
+        let lines = render(&mut screen, 120, 16);
+        assert!(lines[0].contains(" 1 All 1 "), "{}", lines[0]);
+        assert!(lines[0].contains("1 set aside"));
+
+        // Any other key cancels.
+        press(&mut screen, KeyCode::Char('p'));
+        assert_eq!(press(&mut screen, KeyCode::Esc), Action::None);
+        assert_eq!(screen.tasks().len(), 1);
+
+        // A pane that asks for them shows them; p there brings one back.
+        press(&mut screen, KeyCode::Char('/'));
+        type_text(&mut screen, " is:snoozed");
+        press(&mut screen, KeyCode::Enter);
+        assert_eq!(screen.selected().unwrap().item.id(), first);
+        let lines = render(&mut screen, 120, 16);
+        // The screen is drawn three days after the board: a moment is left.
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("z set aside for 1m more"))
+        );
+        assert_eq!(
+            press(&mut screen, KeyCode::Char('p')),
+            Action::Postpone(first.clone(), Postpone::BringBack)
+        );
+        assert_eq!(screen.postpone(&first, Postpone::BringBack, now), None);
+        assert!(screen.tasks().is_empty(), "no longer set aside");
+
+        assert_eq!(
+            screen
+                .postpone("gitlab:group/web!2", Postpone::UntilItMoves, now)
+                .unwrap()
+                .until,
+            Until::Moves
+        );
+    }
+
+    #[test]
+    fn tasks_show_what_their_agents_are_doing() {
+        let mut screen = screen(&["!1", "!2"]);
+        screen.sessions = vec![OpenSession {
+            workspace: "web".into(),
+            tab: "!2".into(),
+            state: AgentState::Blocked,
+        }];
+        // Stands for the launcher's naming: workspace = repository, tab = reference.
+        let of = |task: &Task, open: &[OpenSession]| {
+            open.iter()
+                .find(|open| open.tab == task.item.reference)
+                .map(|open| open.state)
+        };
+        screen.mark_agents(&of);
+
+        let lines = render(&mut screen, 120, 16);
+        let row = lines.iter().find(|line| line.contains("!2")).unwrap();
+        assert!(row.contains("? "), "{row}");
+        press(&mut screen, KeyCode::Down);
+        let lines = render(&mut screen, 120, 16);
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("agent waiting for you"))
+        );
+
+        // A fresh board keeps the marks; a closed terminal loses its own.
+        screen.receive(board(&["!1", "!2"]));
+        screen.mark_agents(&of);
+        assert_eq!(screen.selected().unwrap().agent, Some(AgentState::Blocked));
+        screen.sessions.clear();
+        screen.mark_agents(&of);
+        assert_eq!(screen.selected().unwrap().agent, None);
+    }
+
+    #[test]
+    fn a_task_and_a_space_explain_themselves() {
+        let mut screen = screen(&["!1", "!2"]);
+        screen.kept_in = "~/.config/aki/spaces.toml".into();
+
+        press(&mut screen, KeyCode::Char('i'));
+        let lines = render(&mut screen, 130, 44);
+        let shows = |lines: &[String], text: &str| lines.iter().any(|line| line.contains(text));
+        assert!(shows(&lines, "WHY IT IS HERE"));
+        assert!(shows(
+            &lines,
+            "your review is requested · yours to do · for 3d"
+        ));
+        assert!(shows(&lines, "HOW ITS URGENCY ADDS UP"));
+        assert!(shows(
+            &lines,
+            "\"Review\" has priority 10 (0 first, 100 last): 100 − 10"
+        ));
+        // Drawn three days after the board was read.
+        assert!(shows(&lines, "3 days × 3 a day"));
+        assert!(shows(&lines, "the highest urgency score first"));
+        assert!(shows(&lines, "READING A LINE"));
+
+        // Any key closes it, and is not a command.
+        assert_eq!(press(&mut screen, KeyCode::Char('q')), Action::None);
+        assert!(matches!(screen.mode, Mode::Normal));
+
+        press(&mut screen, KeyCode::Char('I'));
+        let lines = render(&mut screen, 130, 44);
+        assert!(shows(&lines, "space 1 · All"));
+        assert!(shows(&lines, "saved in ~/.config/aki/spaces.toml"));
+        assert!(shows(
+            &lines,
+            "filter: is:todo · group: none · sort: urgency ↓"
+        ));
+        assert!(shows(&lines, "WHAT IT HOLDS RIGHT NOW"));
+        assert!(shows(&lines, "  2 to do   0 waiting"));
+        press(&mut screen, KeyCode::Esc);
+
+        // Nothing selected: nothing to explain, and it says so.
+        press(&mut screen, KeyCode::Char('3'));
+        press(&mut screen, KeyCode::Char('i'));
+        assert!(matches!(screen.mode, Mode::Normal));
+        assert!(screen.notice.is_some());
+    }
+
+    #[test]
     fn layouts_tile_the_whole_area() {
         let area = Rect::new(0, 1, 120, 30);
         for layout in Layout::ALL {
@@ -1400,6 +1997,8 @@ mod tests {
         assert!(row.contains("▸   Review"), "{row:?}");
         // The age is the last thing before the border, not pushed off.
         assert!(row.ends_with("  3d│"), "{row:?}");
+        // Ordered by urgency, the pane shows the score its order comes from.
+        assert!(row.ends_with("  90  3d│"), "{row:?}");
     }
 
     #[test]
@@ -1419,7 +2018,7 @@ mod tests {
         screen.mouse(click(90, 5));
         assert_eq!(screen.desk.space().focus, 1);
 
-        // " myturn " is 8 wide, " 1 All 2 " 9, a gap, then " 2 Gitlab 2 ".
+        // " aki " is 5 wide, " 1 All 2 " 9, a gap, then " 2 Gitlab 2 ".
         screen.mouse(click(20, 0));
         assert_eq!(screen.desk.space().name, "Gitlab");
     }

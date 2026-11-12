@@ -14,7 +14,7 @@ use crate::entities::time::Timestamp;
 use crate::use_cases::ports::{Recalled, SourceError, WorkSource};
 
 /// The shelf of last readings; its name carries the shape's version.
-const SHELF: &str = "items/1";
+const SHELF: &str = "items/2";
 
 pub struct CachedSource {
     inner: Box<dyn WorkSource>,
@@ -129,6 +129,7 @@ enum Saved {
         approvals_missing: u32,
         checks: String,
         conflicts: bool,
+        behind_target: bool,
         i_can_merge: bool,
     },
     Ticket {
@@ -261,6 +262,7 @@ impl From<&WorkItem> for Saved {
                 approvals_missing: change.approvals_missing,
                 checks: checks(change.checks).to_string(),
                 conflicts: change.conflicts,
+                behind_target: change.behind_target,
                 i_can_merge: change.i_can_merge,
             },
             WorkItem::Ticket(ticket) => Saved::Ticket {
@@ -295,6 +297,7 @@ impl Saved {
                 approvals_missing,
                 checks: checks_word,
                 conflicts,
+                behind_target,
                 i_can_merge,
             } => WorkItem::Change(ChangeRequest {
                 item: item.into(),
@@ -352,6 +355,7 @@ impl Saved {
                 .into_iter()
                 .find(|known| checks(*known) == checks_word)?,
                 conflicts,
+                behind_target,
                 i_can_merge,
             }),
             Saved::Ticket {

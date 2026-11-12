@@ -28,7 +28,8 @@ const CONNECTIONS: [&str; 3] = [
     "reviewRequestedMergeRequests",
 ];
 
-const MERGE_REQUEST: &str = "id iid title webUrl draft createdAt updatedAt sourceBranch conflicts approved approvalsLeft \
+const MERGE_REQUEST: &str = "id iid title webUrl draft createdAt updatedAt sourceBranch \
+    divergedFromTargetBranch conflicts approved approvalsLeft \
     project { fullPath } author { username bot } headPipeline { status } \
     userPermissions { canMerge } \
     assignees { nodes { username } } \
@@ -555,6 +556,9 @@ fn read_merge_request(
         approvals_missing: merge_request["approvalsLeft"].as_u64().unwrap_or(0) as u32,
         checks,
         conflicts: merge_request["conflicts"].as_bool().unwrap_or(false),
+        behind_target: merge_request["divergedFromTargetBranch"]
+            .as_bool()
+            .unwrap_or(false),
         i_can_merge: merge_request["userPermissions"]["canMerge"]
             .as_bool()
             .unwrap_or(true),
@@ -698,7 +702,7 @@ mod tests {
         let merge_request = json!({
             "id": "gid://gitlab/MergeRequest/1", "iid": "741", "title": "Add CSV export",
             "webUrl": "https://gitlab.test/g/web/-/merge_requests/741",
-            "draft": false, "createdAt": "2026-03-27T08:49:00Z", "sourceBranch": "PROJ-120-export",
+            "draft": false, "createdAt": "2026-03-27T08:49:00Z", "sourceBranch": "PROJ-120-export", "divergedFromTargetBranch": true,
             "updatedAt": "2026-04-02T11:23:08Z", "conflicts": true,
             "approved": false, "approvalsLeft": 2,
             "project": { "fullPath": "g/web" },
@@ -722,6 +726,7 @@ mod tests {
         assert_eq!(change.checks, Checks::Failed);
         assert!(change.conflicts && !change.assigned_to_me && !change.author.is_me);
         assert_eq!(change.approvals_missing, 2);
+        assert!(change.behind_target);
     }
 
     #[test]

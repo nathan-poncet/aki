@@ -1,4 +1,4 @@
-# myturn configuration. Every value below is the default: delete what you
+# aki configuration. Every value below is the default: delete what you
 # do not change. Unknown keys are errors, so a typo never goes unnoticed.
 
 # How often the board looks again, in seconds (minimum 5).
@@ -7,13 +7,13 @@ refresh_seconds = 30
 # Desktop notification when something new becomes yours while watching.
 notifications = true
 
-# `myturn list` reuses a reading younger than this instead of asking the
+# `aki list` reuses a reading younger than this instead of asking the
 # sources again (0: always ask; `--fresh` asks once). The live board always
 # asks, and shows the last reading while the first one is under way.
 cache_seconds = 60
 
 # ── Sources ────────────────────────────────────────────────────────────
-# Without any [[sources]], myturn uses gitlab.com when `glab` is installed
+# Without any [[sources]], aki uses gitlab.com when `glab` is installed
 # and github.com when `gh` is installed, with their own logins.
 #
 # [[sources]]
@@ -33,7 +33,7 @@ cache_seconds = 60
 # site = "https://your-company.atlassian.net"
 # email = "you@your-company.com"
 # token_env = "JIRA_API_TOKEN"  # https://id.atlassian.com/manage-profile/security/api-tokens
-# # token_command = "security find-generic-password -s myturn-jira -w"
+# # token_command = "security find-generic-password -s aki-jira -w"
 # jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
 
 # ── Review threads ─────────────────────────────────────────────────────
@@ -48,6 +48,12 @@ ignore_bots = true
 
 # ── Drafts ─────────────────────────────────────────────────────────────
 [drafts]
+# Your own drafts:
+#   "todo"    with everything else that waits on you
+#   "apart"   on the board, but only in the panes that ask for drafts (a pane
+#             filtered on is:draft): not in "to do", not counted, not announced
+#   "ignore"  left off the board until they are ready
+mine = "todo"
 # Someone else's draft you are a reviewer of:
 #   "wait"    listed as waiting on its author
 #   "review"  treated like any other review
@@ -97,13 +103,84 @@ lowest = -10
 warm = 100
 hot = 130
 
+# ── Sounds ─────────────────────────────────────────────────────────────
+# While the board is open, something new to do rings: once per refresh,
+# with the sound of the most pressing new task.
+[sounds]
+enabled = true
+# A system sound by name (`aki sounds` lists them, `aki sounds NAME`
+# plays one), or a file of your own: "~/sounds/ding.wav". The default is
+# "Glass" on macOS and "message-new-instant" elsewhere.
+# new_task = "Glass"
+#
+# A sound of its own for a rule; "none" keeps it quiet.
+# [sounds.rules]
+# review_requested = "Ping"
+# reply_needed = "Pop"
+# draft_to_finish = "none"
+
+# ── Agents ─────────────────────────────────────────────────────────────
+# `a` on a task (or `aki agent REF`) opens your coding agent on it, in
+# the repository's clone, already told what there is to do.
+[agent]
+# The agent's command. {prompt} is where the brief goes, as one argument;
+# without it the brief is the last argument. A list works too:
+# ["claude", "--model", "opus", "{prompt}"].
+command = "claude {prompt}"
+# Added at the end of every brief: how you want your agent to work.
+instructions = ""
+# Where the agent opens:
+#   "auto"      Herdr when aki runs inside it, else the terminal itself,
+#               else (no terminal at all) a Claude conversation
+#   "herdr"     a Herdr workspace per repository, a tab per piece of work.
+#               A tab already open is used again: its agent is told the new
+#               brief, or started in it if it is not running
+#   "terminal"  a new window or tab of tmux, Ghostty, WezTerm, kitty, iTerm
+#               or Terminal, whichever aki runs in
+#   "claude"    no terminal: a new Claude conversation, started on the brief
+launcher = "auto"
+# The address a conversation opens at with launcher = "claude". {prompt} is
+# the brief. For the desktop app: "claude://claude.ai/new?q={prompt}".
+chat_url = "https://claude.ai/new?q={prompt}"
+# The names. {repo} the repository's name, {path} its full path, {ref} the
+# reference (!916, #12, PROJ-7), {short} both (web!916), {ticket} the ticket
+# the change names, {kind} the rule that lists it, {source} where it is from.
+workspace = "{repo}"
+tab = "{ticket} {ref}"
+# Whether opening an agent takes you to it.
+focus = true
+# For a terminal aki does not know: your own command to open a window.
+# {command} is what to run, {title} its name, {directory} where it starts.
+# terminal = ["alacritty", "--title", "{title}", "-e", "{command}"]
+# A named Herdr session to open agents in, instead of the current one.
+# herdr_session = "work"
+# Where your clones are looked for (matched by their git remote). Without
+# it: ~/code, ~/src, ~/dev, ~/projects, ~/work, ~/repos, ~/git, ~/Developer
+# and ~/Desktop, whichever exist.
+# roots = ["~/code"]
+#
+# A clone that lives somewhere else:
+# [agent.repos]
+# "group/project" = "~/elsewhere/project"
+
+# ── Assistants ─────────────────────────────────────────────────────────
+# `aki mcp` serves the board to an assistant (Claude Desktop, Claude
+# Code…) over the Model Context Protocol; `aki mcp setup` says how to
+# plug it in. Reading the board is always allowed; the rest is yours to say.
+[mcp]
+enabled = true
+# May it set tasks aside and bring them back?
+set_aside = true
+# May it open your agent on a task?
+start_agent = true
+
 # ── Rules ──────────────────────────────────────────────────────────────
 # Every reason an item can be on the board is a rule. Each one can be
 # disabled, moved to the other list ("todo" or "waiting"), or reprioritized
-# (lower comes first). `myturn rules` prints them all as they apply.
+# (lower comes first). `aki rules` prints them all as they apply.
 #
 # To do:    review_requested re_review reply_needed ticket_mentioned
-#           thread_to_resolve checks_failed conflicts ready_to_merge assigned
+#           thread_to_resolve checks_failed conflicts rebase ready_to_merge assigned
 #           no_reviewer ticket_in_progress ticket_todo nudge draft_to_finish
 # Waiting:  awaiting_review awaiting_author awaiting_reply checks_running
 #           ticket_blocked draft_by_other

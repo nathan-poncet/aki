@@ -73,7 +73,7 @@ impl Session {
     pub fn new(credential: Credential) -> Self {
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(30)))
-            .user_agent("myturn")
+            .user_agent("aki")
             .build()
             .into();
         Self {

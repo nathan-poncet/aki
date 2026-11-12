@@ -204,6 +204,16 @@ pub struct Space {
     pub focus: usize,
 }
 
+/// A repository or a project found in a space, with how much of it waits
+/// on me and on others.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Holding {
+    pub source: String,
+    pub container: String,
+    pub todo: usize,
+    pub waiting: usize,
+}
+
 /// What a group is a group of. Presenters choose the words.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GroupKey {
@@ -235,7 +245,8 @@ impl Space {
             .todo
             .iter()
             .chain(&board.waiting)
-            .filter(|task| self.scope.matches(task) && pane.filter.matches(task))
+            // What was set aside or kept apart shows only where it is asked for.
+            .filter(|task| self.scope.matches(task) && pane.filter.shows(task))
             .collect();
         pane.sort.apply(&mut tasks, pane.reversed);
         for task in tasks {
@@ -258,12 +269,45 @@ impl Space {
         groups
     }
 
+    /// The repositories and projects this space holds right now, the
+    /// busiest first.
+    pub fn holdings(&self, board: &Board) -> Vec<Holding> {
+        let mut holdings: Vec<Holding> = Vec::new();
+        for task in board.todo.iter().chain(&board.waiting) {
+            if !self.scope.matches(task) {
+                continue;
+            }
+            let index = holdings
+                .iter()
+                .position(|held| {
+                    held.source == task.item.source && held.container == task.item.container
+                })
+                .unwrap_or_else(|| {
+                    holdings.push(Holding {
+                        source: task.item.source.clone(),
+                        container: task.item.container.clone(),
+                        todo: 0,
+                        waiting: 0,
+                    });
+                    holdings.len() - 1
+                });
+            match task.bucket() {
+                Bucket::Todo => holdings[index].todo += 1,
+                Bucket::Waiting => holdings[index].waiting += 1,
+            }
+        }
+        holdings.sort_by(|a, b| {
+            (b.todo + b.waiting, &a.container).cmp(&(a.todo + a.waiting, &b.container))
+        });
+        holdings
+    }
+
     /// How many things in this space wait on me.
     pub fn todo_count(&self, board: &Board) -> usize {
         board
             .todo
             .iter()
-            .filter(|task| self.scope.matches(task))
+            .filter(|task| self.scope.matches(task) && task.in_view())
             .count()
     }
 
@@ -585,6 +629,61 @@ mod tests {
     }
 
     #[test]
+    fn a_space_knows_the_repositories_it_holds() {
+        let desk = Desk::starting(&["gitlab".into(), "github".into()]);
+        let board = board();
+        let held = |space: usize| -> Vec<(String, usize, usize)> {
+            desk.spaces()[space]
+                .holdings(&board)
+                .into_iter()
+                .map(|held| (held.container, held.todo, held.waiting))
+                .collect()
+        };
+        // The busiest first; names settle ties.
+        assert_eq!(
+            held(0),
+            [
+                ("g/api".to_string(), 2, 0),
+                ("g/web".to_string(), 1, 1),
+                ("o/notes".to_string(), 1, 0)
+            ]
+        );
+        assert_eq!(held(2), [("o/notes".to_string(), 1, 0)]);
+    }
+
+    #[test]
+    fn drafts_kept_apart_show_only_where_drafts_are_asked_for() {
+        let mut draft = task("gitlab", "g/api", "!8", Kind::Rebase);
+        draft.draft = true;
+        draft.apart = true;
+        let board = Board::new(
+            vec![draft, task("gitlab", "g/api", "!9", Kind::ReplyNeeded)],
+            vec!["gitlab".into()],
+            Vec::new(),
+            Timestamp(0),
+        );
+        let mut desk = Desk::starting(&["gitlab".into()]);
+        let space = desk.space();
+        assert_eq!(references(&space.groups(space.pane(), &board)[0]), ["!9"]);
+        assert_eq!(space.todo_count(&board), 1);
+        assert_eq!(board.apart_count(), 1);
+        // The space still holds it.
+        assert_eq!(space.holdings(&board)[0].todo, 2);
+
+        desk.pane_mut().filter = Filter::parse("is:draft").unwrap();
+        let space = desk.space();
+        assert_eq!(references(&space.groups(space.pane(), &board)[0]), ["!8"]);
+        // Nothing new to announce either.
+        let before = Board::new(Vec::new(), vec!["gitlab".into()], Vec::new(), Timestamp(0));
+        let news: Vec<&str> = board
+            .news_since(&before)
+            .iter()
+            .map(|task| task.item.reference.as_str())
+            .collect();
+        assert_eq!(news, ["!9"]);
+    }
+
+    #[test]
     fn a_pane_orders_its_tasks_its_own_way() {
         // (reference, rule, waiting since, created, updated, urgency score)
         let mut old_draft = task("gitlab", "g/api", "!old-draft", Kind::DraftToFinish);
@@ -640,6 +739,27 @@ mod tests {
             order(Sort::Created, true),
             ["!fresh-review", "!stale-reply", "!old-draft"]
         );
+    }
+
+    #[test]
+    fn what_was_set_aside_shows_only_where_it_is_asked_for() {
+        use crate::entities::snooze::Until;
+
+        let mut board = board();
+        board.snooze("gitlab:g/api!3", Some(Until::Moves));
+        let mut desk = Desk::starting(&["gitlab".into()]);
+        let space = desk.space();
+        assert_eq!(references(&space.groups(space.pane(), &board)[0]).len(), 3);
+        assert_eq!(space.todo_count(&board), 3);
+        assert_eq!(board.snoozed_count(), 1);
+
+        desk.pane_mut().filter = Filter::parse("is:snoozed").unwrap();
+        let space = desk.space();
+        assert_eq!(references(&space.groups(space.pane(), &board)[0]), ["!3"]);
+
+        // Brought back, it is with the rest again.
+        assert_eq!(board.snooze("gitlab:g/api!3", None), None);
+        assert_eq!(board.snoozed_count(), 0);
     }
 
     #[test]

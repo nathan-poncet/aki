@@ -1,7 +1,9 @@
 //! What the product says about an item: why it is on the list, and on which
 //! side of the line.
 
+use super::handoff::AgentState;
 use super::item::ItemRef;
+use super::snooze::Until;
 use super::ticket::{LinkedTicket, Priority};
 use super::time::Timestamp;
 use super::urgency::{Urgency, UrgencyRules, urgency};
@@ -43,6 +45,7 @@ pub enum Kind {
     ThreadToResolve,
     ChecksFailed,
     Conflicts,
+    Rebase,
     ReadyToMerge,
     Assigned,
     NoReviewer,
@@ -59,7 +62,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 20] = [
+    pub const ALL: [Kind; 21] = [
         Kind::ReviewRequested,
         Kind::ReReview,
         Kind::ReplyNeeded,
@@ -67,6 +70,7 @@ impl Kind {
         Kind::ThreadToResolve,
         Kind::ChecksFailed,
         Kind::Conflicts,
+        Kind::Rebase,
         Kind::ReadyToMerge,
         Kind::Assigned,
         Kind::NoReviewer,
@@ -92,6 +96,7 @@ impl Kind {
             Kind::ThreadToResolve => "thread_to_resolve",
             Kind::ChecksFailed => "checks_failed",
             Kind::Conflicts => "conflicts",
+            Kind::Rebase => "rebase",
             Kind::ReadyToMerge => "ready_to_merge",
             Kind::Assigned => "assigned",
             Kind::NoReviewer => "no_reviewer",
@@ -134,6 +139,7 @@ impl Kind {
             Kind::ThreadToResolve => 40,
             Kind::ChecksFailed => 50,
             Kind::Conflicts => 55,
+            Kind::Rebase => 57,
             Kind::ReadyToMerge => 60,
             Kind::Assigned => 65,
             Kind::NoReviewer => 70,
@@ -264,6 +270,16 @@ pub struct Task {
     /// Its own priority, when it is a ticket.
     pub priority_level: Option<Priority>,
     pub urgency: Urgency,
+    /// Set aside by the user, and until when. It is still true; it is just
+    /// not shown with the rest.
+    pub snoozed: Option<Until>,
+    /// The agent the user opened on it, if its terminal is still there.
+    pub agent: Option<AgentState>,
+    /// The item is a draft change, mine or someone else's.
+    pub draft: bool,
+    /// Kept apart from the rest by the user's rules: shown only where it is
+    /// asked for, counted and announced nowhere.
+    pub apart: bool,
 }
 
 impl Task {
@@ -298,7 +314,16 @@ impl Task {
             tickets,
             priority_level,
             urgency,
+            snoozed: None,
+            agent: None,
+            draft: false,
+            apart: false,
         }
+    }
+
+    /// Whether it is with the rest: neither set aside nor kept apart.
+    pub fn in_view(&self) -> bool {
+        self.snoozed.is_none() && !self.apart
     }
 
     /// One thing to do is enough to make the whole item mine.
@@ -371,6 +396,10 @@ pub mod samples {
             since: Timestamp(0),
             tickets: Vec::new(),
             priority_level: None,
+            snoozed: None,
+            agent: None,
+            draft: false,
+            apart: false,
             urgency: Urgency {
                 rule: 100u32.saturating_sub(kind.default_priority()),
                 waiting: 0,

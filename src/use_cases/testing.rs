@@ -3,10 +3,13 @@
 use std::cell::Cell;
 use std::sync::Mutex;
 
-use super::ports::{BoardView, Clock, Notifier, Pace, Pacer, Recalled, SourceError, WorkSource};
+use super::ports::{
+    BoardView, Clock, Notifier, Pace, Pacer, Recalled, Snoozes, SourceError, WorkSource,
+};
 use crate::entities::board::Board;
 use crate::entities::change_request::{ChangeRequest, Checks, ReviewState, Reviewer};
 use crate::entities::item::{Actor, ItemRef, WorkItem};
+use crate::entities::snooze::Snooze;
 use crate::entities::task::Task;
 use crate::entities::ticket::{Priority, StatusCategory, Ticket};
 use crate::entities::time::Timestamp;
@@ -193,6 +196,7 @@ pub fn review_request(reference: &str) -> WorkItem {
         approvals_missing: 1,
         checks: Checks::Passed,
         conflicts: false,
+        behind_target: false,
         i_can_merge: true,
     })
 }
@@ -223,4 +227,17 @@ pub fn ticket_with_priority(key: &str, priority: Priority) -> WorkItem {
         ticket.priority = Some(priority);
     }
     item
+}
+
+/// Nothing was ever set aside, and nothing can be.
+pub struct NoSnoozes;
+
+impl Snoozes for NoSnoozes {
+    fn load(&self) -> Vec<Snooze> {
+        Vec::new()
+    }
+
+    fn save(&self, _snoozes: &[Snooze]) -> Result<(), String> {
+        Ok(())
+    }
 }

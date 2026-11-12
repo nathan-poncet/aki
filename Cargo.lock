@@ -18,6 +18,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aki"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "toml",
+ "unicode-width",
+ "ureq",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -953,21 +968,6 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "myturn"
-version = "0.1.0"
-dependencies = [
- "crossterm",
- "ratatui",
- "rusqlite",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "toml",
- "unicode-width",
- "ureq",
 ]
 
 [[package]]

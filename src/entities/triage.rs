@@ -3,7 +3,7 @@
 
 use super::change_request::{ChangeRequest, Checks, ReviewState, Thread};
 use super::item::WorkItem;
-use super::rules::{OthersDrafts, Resolver, Rules};
+use super::rules::{OthersDrafts, OwnDrafts, Resolver, Rules};
 use super::task::{Bucket, Detail, Kind, Reason, Role, Task, Trigger};
 use super::ticket::{StatusCategory, Ticket};
 use super::time::Timestamp;
@@ -145,6 +145,11 @@ fn triage_change(change: &ChangeRequest, rules: &Rules, now: Timestamp) -> Optio
         .collect();
     let updated = change.item.updated_at;
 
+    let mine_and_draft = change.author.is_me && change.draft;
+    if mine_and_draft && rules.own_drafts == OwnDrafts::Ignore {
+        return None;
+    }
+
     let mut reasons = Reasons::new(rules);
     let role = if change.author.is_me {
         as_author(change, &threads, &mut reasons);
@@ -179,7 +184,7 @@ fn triage_change(change: &ChangeRequest, rules: &Rules, now: Timestamp) -> Optio
         return None;
     }
     let counterpart = (!change.author.is_me).then(|| change.author.name.clone());
-    Some(Task::new(
+    let mut task = Task::new(
         change.item.clone(),
         role,
         counterpart,
@@ -188,7 +193,10 @@ fn triage_change(change: &ChangeRequest, rules: &Rules, now: Timestamp) -> Optio
         None,
         now,
         &rules.urgency,
-    ))
+    );
+    task.draft = change.draft;
+    task.apart = mine_and_draft && rules.own_drafts == OwnDrafts::Apart;
+    Some(task)
 }
 
 /// On someone else's thread: do I owe an answer?
@@ -251,6 +259,9 @@ fn as_author(change: &ChangeRequest, threads: &[ThreadView], reasons: &mut Reaso
     }
     if change.conflicts {
         reasons.add(Kind::Conflicts, Detail::None, None, updated);
+    } else if change.behind_target {
+        // Conflicts already ask for a rebase, and say more.
+        reasons.add(Kind::Rebase, Detail::None, None, updated);
     }
 
     if change.draft {

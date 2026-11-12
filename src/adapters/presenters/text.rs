@@ -1,10 +1,10 @@
-//! The board as plain text, for `myturn list`.
+//! The board as plain text, for `aki list`.
 
 use std::fmt::Write;
 
 use super::wording::{self, age, column, plain};
 use crate::entities::board::Board;
-use crate::entities::desk::Sort;
+use crate::entities::desk::{Desk, Sort};
 use crate::entities::rules::Rules;
 use crate::entities::task::{Bucket, Kind, Task};
 use crate::entities::time::Timestamp;
@@ -61,6 +61,9 @@ fn section(out: &mut String, title: &str, tasks: &[&Task], now: Timestamp, style
         );
         let indent = " ".repeat(LABEL + 3);
         let mut why = wording::summary(task);
+        if let Some(until) = task.snoozed {
+            why = format!("{} · {why}", wording::set_aside(until, now));
+        }
         if !task.tickets.is_empty() {
             let _ = write!(why, " · {}", wording::tickets(task));
         }
@@ -102,13 +105,21 @@ pub fn board(
     out
 }
 
-/// One line for a prompt or a status bar.
-pub fn count(board: &Board) -> String {
+/// One line for a prompt or a status bar. `aside`: how many tasks the
+/// user set aside, `apart`: how many drafts the rules keep apart; the
+/// counts leave both out.
+pub fn count(board: &Board, aside: usize, apart: usize) -> String {
     let mut line = format!(
         "{} to do · {} waiting",
         board.todo.len(),
         board.waiting.len()
     );
+    if aside > 0 {
+        let _ = write!(line, " · {aside} set aside");
+    }
+    if apart > 0 {
+        let _ = write!(line, " · {apart} drafts apart");
+    }
     if !board.failures.is_empty() {
         let _ = write!(line, " · {} source(s) down", board.failures.len());
     }
@@ -124,12 +135,62 @@ pub fn failures(board: &Board, now: Timestamp) -> String {
                 Some(at) => format!(" (showing what was read {} ago)", age(at, now)),
                 None => String::new(),
             };
-            format!("myturn: {}: {}{shown}\n", failure.source, failure.message)
+            format!("aki: {}: {}{shown}\n", failure.source, failure.message)
         })
         .collect()
 }
 
-/// Every rule as it applies, for `myturn rules`.
+/// The spaces, for `aki spaces`: how each is made and what it holds.
+/// Without a board, only how they are made.
+pub fn spaces(desk: &Desk, board: Option<&Board>) -> String {
+    let or_all = |query: &str| match query {
+        "" => "everything".to_string(),
+        query => query.to_string(),
+    };
+    let mut out = String::new();
+    for (index, space) in desk.spaces().iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "{} {}\n    scope   {}\n    layout  {}",
+            index + 1,
+            space.name,
+            or_all(space.scope.query()),
+            space.layout.name()
+        );
+        for (number, pane) in space.panes.iter().enumerate() {
+            let _ = writeln!(
+                out,
+                "    pane {}  {} · filter: {} · group: {} · sort: {}",
+                number + 1,
+                wording::pane_title(pane),
+                or_all(pane.filter.query()),
+                pane.grouping.name(),
+                wording::sort(pane.sort, pane.reversed),
+            );
+        }
+        if let Some(board) = board {
+            let holdings = space.holdings(board);
+            if holdings.is_empty() {
+                let _ = writeln!(out, "    holds   nothing right now");
+            }
+            for (number, held) in holdings.iter().enumerate() {
+                let _ = writeln!(
+                    out,
+                    "    {}   {} · {}  ({} to do, {} waiting)",
+                    if number == 0 { "holds" } else { "     " },
+                    held.source,
+                    held.container,
+                    held.todo,
+                    held.waiting
+                );
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// Every rule as it applies, for `aki rules`.
 pub fn rules(rules: &Rules) -> String {
     let mut out = String::new();
     for bucket in [Bucket::Todo, Bucket::Waiting] {
@@ -165,6 +226,7 @@ pub fn rules(rules: &Rules) -> String {
         rules.who_resolves.name()
     );
     let _ = writeln!(out, "threads.ignore_bots       {}", rules.ignore_bots);
+    let _ = writeln!(out, "drafts.mine               {}", rules.own_drafts.name());
     let _ = writeln!(
         out,
         "drafts.others             {}",

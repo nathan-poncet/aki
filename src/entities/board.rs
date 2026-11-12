@@ -2,6 +2,8 @@
 
 use std::collections::BTreeSet;
 
+use super::handoff::AgentState;
+use super::snooze::{Snooze, Until};
 use super::task::{Bucket, Kind, Task};
 use super::time::Timestamp;
 
@@ -81,10 +83,48 @@ impl Board {
         }
     }
 
+    /// Sets a task aside, or brings it back (`None`). Returns what to
+    /// remember, when there is something to remember.
+    pub fn snooze(&mut self, item: &str, until: Option<Until>) -> Option<Snooze> {
+        let task = self
+            .todo
+            .iter_mut()
+            .chain(&mut self.waiting)
+            .find(|task| task.item.id() == item)?;
+        task.snoozed = until;
+        until.map(|until| Snooze::of(task, until))
+    }
+
+    /// Says of every task what its agent is doing, when it has one.
+    pub fn mark_agents(&mut self, of: impl Fn(&Task) -> Option<AgentState>) {
+        for task in self.todo.iter_mut().chain(&mut self.waiting) {
+            task.agent = of(task);
+        }
+    }
+
+    /// How many tasks are set aside.
+    pub fn snoozed_count(&self) -> usize {
+        self.todo
+            .iter()
+            .chain(&self.waiting)
+            .filter(|task| task.snoozed.is_some())
+            .count()
+    }
+
+    /// How many tasks the rules keep apart.
+    pub fn apart_count(&self) -> usize {
+        self.todo
+            .iter()
+            .chain(&self.waiting)
+            .filter(|task| task.apart && task.snoozed.is_none())
+            .count()
+    }
+
     /// Every (item, reason) that asks something of me.
     fn demands(&self) -> BTreeSet<(String, Kind)> {
         self.todo
             .iter()
+            .filter(|task| task.in_view())
             .flat_map(|task| {
                 task.reasons
                     .iter()
@@ -106,6 +146,8 @@ impl Board {
             .collect();
         self.todo
             .iter()
+            // What was set aside comes back quietly; what is apart stays quiet.
+            .filter(|task| task.in_view())
             .filter(|task| !hidden.contains(task.item.source.as_str()))
             .filter(|task| {
                 task.reasons

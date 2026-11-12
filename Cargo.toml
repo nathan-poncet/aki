@@ -1,10 +1,10 @@
 [package]
-name = "myturn"
+name = "aki"
 version = "0.1.0"
 edition = "2024"
 description = "Whose turn is it? One live list of what waits on you, and what waits on others, across GitLab, GitHub and Jira"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/nathan-poncet/myturn"
+repository = "https://github.com/nathan-poncet/aki"
 readme = "README.md"
 keywords = ["gitlab", "github", "jira", "tui", "code-review"]
 categories = ["command-line-utilities", "development-tools"]

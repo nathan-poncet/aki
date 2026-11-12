@@ -11,11 +11,13 @@ use crate::entities::filter::Filter;
 use crate::use_cases::ports::{DeskError, DeskStore};
 
 const HEADER: &str = "\
-# Your spaces. myturn rewrites this file when you rearrange the board, and
+# Your spaces. aki rewrites this file when you rearrange the board, and
 # reads it at start; edit it by hand if you like.
 #
+#   scope            what belongs to the space at all; every pane filters further
 #   scope / filter   is:todo|waiting  source:  repo:  kind:  top:  role:  by:  words
 #                    heat:hot|warm|calm  ticket:KEY|any  priority:high
+#                    agent:working|blocked|done|idle|open|any  is:snoozed  is:draft
 #                    values: a,b (any)   negation: -repo:api
 #                    kind: any reason of the task   top: its most pressing one
 #   layout           columns | rows | master | grid
