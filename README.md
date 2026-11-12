@@ -158,7 +158,12 @@ Where the terminal opens is a **launcher**:
   it is told the new brief (you fixed the pipeline there yesterday, today
   it has to rebase); if the agent is gone, it is started again in that
   tab; and nothing is typed into a tab busy with something else.
-- **the terminal itself** otherwise: a new window or tab of tmux, Ghostty,
+- **tmux** and **TUIOS**, the same way: a tmux session per repository and
+  a window per piece of work; a TUIOS workspace (a free one, given the
+  repository's name) and a named window. The same reuse rules apply. TUIOS
+  reports what its agents are doing, like Herdr; tmux only knows that the
+  window is open.
+- **the terminal itself** otherwise: a new window or tab of Ghostty,
   WezTerm, kitty, iTerm or Terminal, whichever aki runs in, or your own
   command (`terminal = ["alacritty", "-e", "{command}"]`).
 - **a Claude conversation**, for whoever does not live in a terminal
@@ -174,7 +179,8 @@ own login shell, so it finds the same `PATH` as at your prompt.
 Once an agent is open on a task, the board shows what it is doing, next
 to the task: `◐` working, `?` waiting for you, `✓` done and not looked at
 yet, `·` idle, `○` its terminal is open. It is read from the launcher every
-two seconds, by the same names: Herdr tells; a plain terminal cannot.
+two seconds, by the same names: Herdr and TUIOS tell, tmux says only that
+the window is open, a plain terminal cannot tell anything.
 `agent:blocked` in a pane's filter gathers the agents that wait for you.
 
 A launcher is one small adapter: something that can open a named place
@@ -397,7 +403,7 @@ src/use_cases   collect the board, watch it, open the desk, launch an agent,
                 check the sources; ports.rs is what they need from outside
                 (WorkSource, DeskStore, Launcher, Checkouts, …).
 src/adapters    gateways (GitLab, GitHub, Jira, spaces.toml, the SQLite cache,
-                Herdr, terminal and conversation launchers, local clones, the
+                Herdr, tmux, TUIOS, terminal and conversation launchers, local clones, the
                 machine), presenters (text, JSON, TUI, wording), controllers (the
                 CLI parser, the MCP server), the config file.
 src/app.rs      the composition root: the only place that knows every ring.
@@ -418,7 +424,7 @@ and every rule applies to it unchanged.
 - A change's being behind its target is the forge's word: GitLab says it
   for every merge request, GitHub only where the branch must be up to date
   to merge.
-- Agents: only the Herdr launcher was run for real; the terminal ones are
+- Agents: the Herdr, tmux and TUIOS launchers were run for real; the terminal ones are
   built from each terminal's documented command line, and the conversation
   one relies on the address prefilling a new chat. The MCP server speaks
   the protocol over standard input and output only. In Herdr, a session

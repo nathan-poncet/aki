@@ -18,6 +18,7 @@ use crate::adapters::gateways::github::GitHub;
 use crate::adapters::gateways::gitlab::GitLab;
 use crate::adapters::gateways::jira::Jira;
 use crate::adapters::gateways::launch::{ChatLauncher, HerdrLauncher, Terminal, TerminalLauncher};
+use crate::adapters::gateways::multiplexers::{TmuxLauncher, TuiosLauncher};
 use crate::adapters::gateways::snooze_file::SnoozeFile;
 use crate::adapters::gateways::sound::{self, SoundNotifier, Together};
 use crate::adapters::gateways::system::{DesktopNotifier, SystemClock, TimerPacer, open_url};
@@ -570,12 +571,18 @@ impl Handoff {
             .clone()
             .map(Terminal::Custom)
             .or_else(|| Terminal::detect(&|name| std::env::var(name).ok()));
-        // Left to choose: Herdr when it is there, else the terminal aki
-        // runs in, else (no terminal at all) a conversation.
+        let set = |name: &str| std::env::var_os(name).is_some();
+        let in_tuios = set("TUIOS_PANE_ID") || set("TUIOS_SESSION");
+        // Left to choose: the multiplexer aki runs in (Herdr, TUIOS, tmux),
+        // else the terminal itself, else (no terminal at all) a conversation.
         let choice = match agent.launcher {
             LauncherChoice::Auto if in_herdr || agent.herdr_session.is_some() => {
                 LauncherChoice::Herdr
             }
+            LauncherChoice::Auto if in_tuios || agent.tuios_session.is_some() => {
+                LauncherChoice::Tuios
+            }
+            LauncherChoice::Auto if set("TMUX") && agent.terminal.is_none() => LauncherChoice::Tmux,
             LauncherChoice::Auto if terminal.is_some() => LauncherChoice::Terminal,
             LauncherChoice::Auto => LauncherChoice::Claude,
             chosen => chosen,
@@ -584,6 +591,11 @@ impl Handoff {
             LauncherChoice::Herdr => Box::new(HerdrLauncher {
                 scripts,
                 session: agent.herdr_session.clone(),
+            }),
+            LauncherChoice::Tmux => Box::new(TmuxLauncher { scripts }),
+            LauncherChoice::Tuios => Box::new(TuiosLauncher {
+                scripts,
+                session: agent.tuios_session.clone(),
             }),
             LauncherChoice::Claude => Box::new(ChatLauncher {
                 url: agent.chat_url.clone(),

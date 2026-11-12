@@ -67,24 +67,36 @@ focus = true</pre></div>
 </table>
 
 <h2 id="where-it-opens">Where it opens</h2>
-<p><code>launcher</code> chooses. <code>"auto"</code>, the default, takes Herdr when aki runs inside it, else the terminal aki runs in, else a Claude conversation.</p>
+<p><code>launcher</code> chooses. <code>"auto"</code>, the default, takes the multiplexer aki runs inside (Herdr, TUIOS or tmux), else the terminal aki runs in, else a Claude conversation.</p>
+<p>In a multiplexer, a place per repository holds a terminal per piece of work, both named from your templates and created when missing. A place or a terminal is reused only when it bears exactly that name, and a terminal that is already open is never doubled:</p>
+<ul>
+  <li>an agent runs in it: the new brief is pasted into its prompt and sent;</li>
+  <li>the agent is gone: it is started again in that terminal, on the brief;</li>
+  <li>the terminal runs something else: nothing is typed, and aki says so.</li>
+</ul>
 <div class="tabs">
   <section data-tab="Herdr">
     <div class="code"><pre>[agent]
 launcher = "herdr"</pre></div>
-    <p>One workspace per repository, one tab per piece of work, named from your templates and created when missing. A workspace or a tab is reused only when it bears exactly that name.</p>
-    <p>A tab that is already open is never doubled:</p>
-    <ul>
-      <li>an agent runs in it: the new brief is pasted into its prompt and sent;</li>
-      <li>the agent is gone: it is started again in that tab, on the brief;</li>
-      <li>the tab runs something else: nothing is typed, and aki says so.</li>
-    </ul>
+    <p>One workspace per repository, one tab per piece of work. Herdr reports what each agent is doing.</p>
     <p><code>herdr_session = "work"</code> opens agents in a named Herdr session instead of the current one.</p>
+  </section>
+  <section data-tab="tmux">
+    <div class="code"><pre>[agent]
+launcher = "tmux"</pre></div>
+    <p>One session per repository, one window per piece of work. Inside tmux, opening an agent switches your client to its session; outside, the session is created detached and <code>tmux attach -t web</code> takes you there.</p>
+    <p>tmux does not report agent states: the board shows that the window is open. A dot or a colon in a repository's name becomes an underscore in the session's.</p>
+  </section>
+  <section data-tab="TUIOS">
+    <div class="code"><pre>[agent]
+launcher = "tuios"</pre></div>
+    <p>One workspace per repository, one named window per piece of work. A repository takes the first workspace that is empty and unnamed, and gives it its name; when the nine are taken, aki says so. TUIOS reports what each agent is doing.</p>
+    <p><code>tuios_session = "work"</code> opens agents in a named TUIOS session instead of the one aki runs in.</p>
   </section>
   <section data-tab="Terminal">
     <div class="code"><pre>[agent]
 launcher = "terminal"</pre></div>
-    <p>A new window or tab of tmux, Ghostty, WezTerm, kitty, iTerm or Terminal, whichever aki runs in. For another terminal, give your own command:</p>
+    <p>A new window or tab of Ghostty, WezTerm, kitty, iTerm or Terminal, whichever aki runs in. For another terminal, give your own command:</p>
     <div class="code"><pre>[agent]
 terminal = ["alacritty", "--title", "{title}", "-e", "{command}"]</pre></div>
     <p><code>{command}</code> is what to run, <code>{title}</code> its name, <code>{directory}</code> where it starts. A plain terminal cannot tell whether a tab is already open, nor what the agent is doing.</p>
@@ -129,7 +141,7 @@ roots = ["~/code"]
   <tr><td><code>·</code></td><td>Idle.</td><td><code>agent:idle</code></td></tr>
   <tr><td><code>○</code></td><td>Its terminal is open; what runs in it is not known.</td><td><code>agent:open</code></td></tr>
 </table>
-<p>Only Herdr reports states. A pane filtered on <code>agent:blocked</code> gathers the agents that wait for you.</p><div class="pn"><a href="keys.html"><small>Previous</small>Keys</a><a class="next" href="assistants.html"><small>Next</small>Assistants</a></div></article></main>
+<p>Herdr and TUIOS report states; tmux shows <code>○</code>. A pane filtered on <code>agent:blocked</code> gathers the agents that wait for you.</p><div class="pn"><a href="keys.html"><small>Previous</small>Keys</a><a class="next" href="assistants.html"><small>Next</small>Assistants</a></div></article></main>
 <aside class="toc" aria-label="On this page"><h4>On this page</h4><a href="#the-brief">The brief</a><a href="#set-it-up">Set it up</a><a href="#where-it-opens">Where it opens</a><a href="#names">Names</a><a href="#the-clone">The clone</a><a href="#what-the-agent-is-doing">What the agent is doing</a></aside></div>
 <script src="search-index.js"></script><script src="site.js"></script>
 </body></html>

@@ -86,6 +86,10 @@ pub enum LauncherChoice {
     /// Herdr when aki runs inside it, else the terminal itself.
     Auto,
     Herdr,
+    /// A tmux session per repository, a window per piece of work.
+    Tmux,
+    /// A TUIOS workspace per repository, a window per piece of work.
+    Tuios,
     Terminal,
     /// No terminal at all: a new Claude conversation, started on the brief.
     Claude,
@@ -100,6 +104,8 @@ pub struct AgentConfig {
     pub terminal: Option<Vec<String>>,
     /// A named Herdr session to open agents in.
     pub herdr_session: Option<String>,
+    /// A named TUIOS session to open agents in.
+    pub tuios_session: Option<String>,
     /// The address a new conversation opens at; `{prompt}` is the brief.
     pub chat_url: String,
     /// Where clones are looked for. `None`: the usual places.
@@ -248,6 +254,7 @@ struct AgentFile {
     launcher: Option<String>,
     terminal: Option<Words>,
     herdr_session: Option<String>,
+    tuios_session: Option<String>,
     chat_url: Option<String>,
     roots: Option<Vec<String>>,
     repos: BTreeMap<String, String>,
@@ -281,6 +288,8 @@ fn read_agent(file: AgentFile) -> Result<AgentConfig, ConfigError> {
         launcher: match file.launcher.as_deref() {
             None | Some("auto") => LauncherChoice::Auto,
             Some("herdr") => LauncherChoice::Herdr,
+            Some("tmux") => LauncherChoice::Tmux,
+            Some("tuios") => LauncherChoice::Tuios,
             Some("terminal") => LauncherChoice::Terminal,
             Some("claude") => LauncherChoice::Claude,
             Some(other) => {
@@ -288,13 +297,14 @@ fn read_agent(file: AgentFile) -> Result<AgentConfig, ConfigError> {
                     "agent.launcher",
                     "value",
                     other,
-                    &["auto", "herdr", "terminal", "claude"],
+                    &["auto", "herdr", "tmux", "tuios", "terminal", "claude"],
                 );
             }
         },
         chat_url: file.chat_url.unwrap_or_else(|| CHAT_URL.to_string()),
         terminal: file.terminal.map(Words::into_words),
         herdr_session: file.herdr_session,
+        tuios_session: file.tuios_session,
         roots: file
             .roots
             .map(|roots| roots.iter().map(|root| expand(root)).collect()),
@@ -824,6 +834,19 @@ mod tests {
         assert_eq!(config.agent.chat_url, "claude://claude.ai/new?q={prompt}");
         assert!(config.mcp.set_aside && !config.mcp.start_agent);
         assert!(!parse("[mcp]\nenabled = false").unwrap().mcp.enabled);
+
+        let agent = parse("[agent]\nlauncher = \"tuios\"\ntuios_session = \"work\"")
+            .unwrap()
+            .agent;
+        assert_eq!(agent.launcher, LauncherChoice::Tuios);
+        assert_eq!(agent.tuios_session.as_deref(), Some("work"));
+        assert_eq!(
+            parse("[agent]\nlauncher = \"tmux\"")
+                .unwrap()
+                .agent
+                .launcher,
+            LauncherChoice::Tmux
+        );
     }
 
     #[test]

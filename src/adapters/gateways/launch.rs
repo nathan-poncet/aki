@@ -30,9 +30,9 @@ fn quote(word: &str) -> String {
 }
 
 /// The files of one launch.
-struct Scripts {
-    entry: PathBuf,
-    run: PathBuf,
+pub(super) struct Scripts {
+    pub(super) entry: PathBuf,
+    pub(super) run: PathBuf,
     /// Created by the entry script as it starts: proof that it did.
     started: PathBuf,
 }
@@ -64,8 +64,15 @@ fn entry_script(shell: &str, scripts: &Scripts) -> String {
         quote(&scripts.started.to_string_lossy()),
         // A bare path is a command in every shell; quoted once more for the
         // one that reads this line.
-        quote(&quote(&scripts.run.to_string_lossy())),
+        // Read by `sh`, never run by its own path: a file just written is
+        // one the system may take its time to let run.
+        quote(&through_sh(&scripts.run)),
     )
+}
+
+/// The command line that has `sh` read a script.
+pub(super) fn through_sh(script: &Path) -> String {
+    format!("/bin/sh {}", quote(&script.to_string_lossy()))
 }
 
 fn write_executable(path: &Path, text: &str) -> std::io::Result<()> {
@@ -82,7 +89,11 @@ fn write_executable(path: &Path, text: &str) -> std::io::Result<()> {
 
 /// Writes a session's scripts where only the user can read them, and
 /// forgets those of past days.
-fn write_scripts(folder: &Path, shell: &str, session: &Session) -> Result<Scripts, LaunchError> {
+pub(super) fn write_scripts(
+    folder: &Path,
+    shell: &str,
+    session: &Session,
+) -> Result<Scripts, LaunchError> {
     let failed =
         |error: std::io::Error| LaunchError::Failed(format!("{}: {error}", folder.display()));
     std::fs::create_dir_all(folder).map_err(failed)?;
@@ -116,7 +127,7 @@ fn write_scripts(folder: &Path, shell: &str, session: &Session) -> Result<Script
 }
 
 /// The user's shell, as the environment names it.
-fn users_shell() -> String {
+pub(super) fn users_shell() -> String {
     std::env::var("SHELL")
         .ok()
         .filter(|shell| !shell.is_empty())
@@ -233,7 +244,7 @@ fn wait_for_shell(world: &World, pane: &str) {
 
 /// The brief as a paste: an agent's prompt takes it whole, new lines
 /// included, instead of reading each line as a message of its own.
-fn pasted(prompt: &str) -> String {
+pub(super) fn pasted(prompt: &str) -> String {
     let safe: String = prompt
         .chars()
         // Nothing in it may end the paste early or act as a key.
@@ -287,7 +298,7 @@ fn reuse_tab(
         let pane = text(&pane["pane_id"], "which pane the tab has")?;
         // Typing at anything but a prompt would land in whatever runs there.
         if at_prompt(&herdr(&["pane", "process-info", "--pane", pane])?) {
-            herdr(&["pane", "run", pane, &scripts.run.to_string_lossy()])?;
+            herdr(&["pane", "run", pane, &through_sh(&scripts.run)])?;
             return Ok(Launched::Restarted);
         }
     }
@@ -374,7 +385,7 @@ fn open_in_herdr(
         (world.pause)();
     }
     wait_for_shell(world, &pane);
-    herdr(&["pane", "run", &pane, &scripts.run.to_string_lossy()])?;
+    herdr(&["pane", "run", &pane, &through_sh(&scripts.run)])?;
     Ok(Launched::Opened)
 }
 
@@ -666,7 +677,7 @@ mod tests {
              SHELL='/opt/homebrew/bin/fish'\n\
              export SHELL\n\
              : > '/cache/agent-1.started'\n\
-             exec \"$SHELL\" -l -i -c ''\\''/cache/agent-1.run.sh'\\'''\n"
+             exec \"$SHELL\" -l -i -c '/bin/sh '\\''/cache/agent-1.run.sh'\\'''\n"
         );
     }
 
@@ -691,7 +702,8 @@ mod tests {
         assert!(!scripts.started.exists());
 
         // No terminal here: the shell left at the end reads nothing and exits.
-        let output = Command::new(&scripts.entry)
+        let output = Command::new("/bin/sh")
+            .arg(&scripts.entry)
             .stdin(Stdio::null())
             .output()
             .unwrap();
@@ -878,7 +890,7 @@ mod tests {
             herdr.asked.borrow()[3..],
             [
                 "pane process-info --pane w2:p8",
-                "pane run w2:p8 /cache/agent-1.run.sh",
+                "pane run w2:p8 /bin/sh '/cache/agent-1.run.sh'",
                 "tab focus w2:t4"
             ]
         );
@@ -924,7 +936,7 @@ mod tests {
         assert_eq!(herdr.pauses.get(), START_POLLS + 5);
         assert_eq!(
             herdr.asked.borrow().last().unwrap(),
-            "pane run w9:p1 /cache/agent-1.run.sh"
+            "pane run w9:p1 /bin/sh '/cache/agent-1.run.sh'"
         );
     }
 
