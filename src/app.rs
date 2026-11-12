@@ -575,13 +575,14 @@ impl Handoff {
         let in_tuios = set("TUIOS_PANE_ID") || set("TUIOS_SESSION");
         // Left to choose: the multiplexer aki runs in (Herdr, TUIOS, tmux),
         // else the terminal itself, else (no terminal at all) a conversation.
+        // TUIOS first: its panes also say HERDR_ENV=1, for tools that only
+        // know Herdr, and its stand-in for Herdr does not open workspaces.
         let choice = match agent.launcher {
+            LauncherChoice::Auto if in_tuios => LauncherChoice::Tuios,
             LauncherChoice::Auto if in_herdr || agent.herdr_session.is_some() => {
                 LauncherChoice::Herdr
             }
-            LauncherChoice::Auto if in_tuios || agent.tuios_session.is_some() => {
-                LauncherChoice::Tuios
-            }
+            LauncherChoice::Auto if agent.tuios_session.is_some() => LauncherChoice::Tuios,
             LauncherChoice::Auto if set("TMUX") && agent.terminal.is_none() => LauncherChoice::Tmux,
             LauncherChoice::Auto if terminal.is_some() => LauncherChoice::Terminal,
             LauncherChoice::Auto => LauncherChoice::Claude,

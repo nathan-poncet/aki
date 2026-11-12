@@ -361,6 +361,13 @@ fn open_in_tuios(
                 .as_ref()
                 .map(|directory| directory.to_string_lossy().into_owned());
             let entry = scripts.entry.to_string_lossy();
+            // TUIOS draws nothing in a window born on a workspace that is
+            // not shown: show it first, and go back after when not staying.
+            let shown = listed["current_workspace"].as_u64().map(|n| n.to_string());
+            let elsewhere = shown.as_deref() != Some(workspace.as_str());
+            if elsewhere {
+                tuios(&["select-workspace", &workspace])?;
+            }
             let mut create = vec!["new-window", &session.tab, "--workspace", &workspace];
             if let Some(directory) = &directory {
                 create.extend(["--cwd", directory]);
@@ -371,6 +378,9 @@ fn open_in_tuios(
             let window = created["window_id"].as_str().ok_or_else(|| {
                 LaunchError::Failed("tuios did not say which window it opened".into())
             })?;
+            if let (true, false, Some(shown)) = (elsewhere, session.focus, &shown) {
+                tuios(&["select-workspace", shown])?;
+            }
             (window.to_string(), Launched::Opened)
         }
     };
@@ -668,6 +678,7 @@ mod tests {
             [
                 // Not 1 (in use), not 2 (someone else's name): the first free one.
                 "set-workspace-name 3 web",
+                "select-workspace 3",
                 "new-window PROJ-580 !916 --workspace 3 --cwd /code/acme/web --no-focus --json -- /bin/sh <script>",
                 "select-workspace 3",
                 "focus-window w-new"
