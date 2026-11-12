@@ -82,6 +82,7 @@ def header(current, wide):
         + link("install.html", "Docs")
         + link("quick-start.html", "Quick start", ' class="hide-s"')
         + link("faq.html", "FAQ", ' class="hide-s"')
+        + f'<a class="cta" href="{"#install" if current == "index.html" else "index.html#install"}">Install</a>'
         + f'<a class="gh" href="{REPO}">GitHub</a>'
         + THEME
         + ('<button class="menu" type="button" aria-label="Documentation menu">≡</button>' if wide else "")
@@ -91,12 +92,19 @@ def header(current, wide):
     return f'<header class="top"><div class="{box}">{inner}</div></header>\n'
 
 
-FOOT = f"""<footer class="foot"><div class="wrap">
-<span>aki — à qui ?</span>
-<a href="install.html">Docs</a>
-<a href="{REPO}">GitHub</a>
-<a href="{REPO}/issues">Issues</a>
-<span class="push">GPL-3.0-or-later</span>
+def foot(pages):
+    """The landing page's footer: the brand, then every page of the documentation."""
+    columns = "".join(
+        f"<div><h4>{name}</h4>"
+        + "".join(f'<a href="{slug}.html">{pages[slug][0]["title"]}</a>' for slug in slugs)
+        + "</div>"
+        for name, slugs in NAV
+    )
+    return f"""<footer class="foot"><div class="wrap foot-grid">
+<div class="foot-brand"><a class="brand" href="index.html" aria-label="aki, home">{MARK}aki</a>
+<p>aki — à qui ?</p><p class="lic">GPL-3.0-or-later</p></div>
+{columns}
+<div><h4>Project</h4><a href="{REPO}">GitHub</a><a href="{REPO}/issues">Issues</a></div>
 </div></footer>
 """
 
@@ -240,7 +248,7 @@ def build():
         + '<body>\n'
         + header("index.html", False)
         + f'<main class="landing">{body}</main>\n'
-        + FOOT
+        + foot(pages)
         + '<script src="site.js"></script><script src="demo.js"></script><script src="landing.js"></script>\n</body></html>\n'
     )
 
